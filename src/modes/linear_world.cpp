@@ -17,6 +17,9 @@
 
 #include "modes/linear_world.hpp"
 
+#include "education/demo_questions.hpp"
+#include "education/question_dialog.hpp"
+
 #include "achievements/achievements_manager.hpp"
 #include "config/player_manager.hpp"
 #include "audio/music_manager.hpp"
@@ -64,10 +67,28 @@ LinearWorld::LinearWorld() : WorldWithRank()
     m_last_lap_sfx_played  = false;
     m_last_lap_sfx_playing = false;
     m_fastest_lap_ticks    = INT_MAX;
+
+    // Carrera Educativa is initially limited to single-player linear races.
+    // Networking will be enabled only after question state is authoritative
+    // on the server.
+    m_education_enabled = false;
+    m_education_questions.clear();
+    if (!NetworkConfig::get()->isNetworking() &&
+        RaceManager::get()->getNumLocalPlayers() == 1 &&
+        (RaceManager::get()->getMinorMode() ==
+             RaceManager::MINOR_MODE_NORMAL_RACE ||
+         RaceManager::get()->getMinorMode() ==
+             RaceManager::MINOR_MODE_TIME_TRIAL))
+    {
+        m_education_questions.setQuestionBank(
+            Education::createDemoQuestionBank());
+        m_education_enabled = m_education_questions.startRace();
+    }
     m_valid_reference_time = false;
     m_live_time_difference = 0.0f;
     m_fastest_lap_kart_name = "";
     m_check_structure_compatible = false;
+    m_education_enabled = false;
 }   // LinearWorld
 
 // ----------------------------------------------------------------------------
@@ -167,6 +188,73 @@ void LinearWorld::reset(bool restart)
 }   // reset
 
 //-----------------------------------------------------------------------------
+/** Carrera Educativa: distribute the 20 mandatory questions evenly across
+ *  the total race distance. These are virtual checkpoints, so they work on
+ *  every linear track without editing each track asset.
+ */
+void LinearWorld::updateEducationalQuestions()
+{
+    if (!m_education_enabled ||
+        getPhase() != RACE_PHASE ||
+        GUIEngine::ModalDialog::isADialogActive() ||
+        m_education_questions.isRaceQuestionSetComplete())
+    {
+        return;
+    }
+
+    AbstractKart* player_kart = NULL;
+    for (unsigned int i = 0; i < getNumKarts(); i++)
+    {
+        AbstractKart* kart = m_karts[i].get();
+        if (kart && kart->getController()->isLocalPlayerController())
+        {
+            player_kart = kart;
+            break;
+        }
+    }
+
+    if (!player_kart || player_kart->isEliminated() ||
+        player_kart->hasFinishedRace())
+    {
+        return;
+    }
+
+    const Education::Question* question =
+        m_education_questions.getCurrentQuestion();
+    if (!question)
+        return;
+
+    int laps = RaceManager::get()->getNumLaps();
+    if (laps < 1)
+        laps = 1;
+
+    const float total_distance =
+        Track::getCurrentTrack()->getTrackLength() * (float)laps;
+
+    const std::size_t answered =
+        m_education_questions.getAnsweredCount();
+
+    // 1/21, 2/21, ... 20/21 of the race. The last question therefore
+    // appears before the finish line and cannot be skipped by finishing.
+    const float fraction =
+        (float)(answered + 1) /
+        (float)(Education::QuestionManager::QUESTIONS_PER_RACE + 1);
+
+    const float checkpoint_distance = total_distance * fraction;
+    const unsigned int kart_id = player_kart->getWorldKartId();
+
+    if (getOverallDistance(kart_id) < checkpoint_distance)
+        return;
+
+    new Education::QuestionDialog(
+        &m_education_questions,
+        player_kart,
+        *question,
+        answered + 1,
+        Education::QuestionManager::QUESTIONS_PER_RACE);
+}
+
+//-----------------------------------------------------------------------------
 /** General update function called once per frame. This updates the kart
  *  sectors, which are then used to determine the kart positions.
  *  \param ticks Number of physics time steps - should be 1.
@@ -221,6 +309,10 @@ void LinearWorld::update(int ticks)
     // ---------------------------------------------------------------
     WorldWithRank::updateTrack(ticks);
     updateRacePosition();
+
+    // Mandatory educational checkpoints are evaluated after track progress
+    // has been updated for this frame.
+    updateEducationalQuestions();
 
     const unsigned int kart_amount = getNumKarts();
     for (unsigned int i=0; i<kart_amount; i++)
