@@ -221,6 +221,7 @@ private:
     void addGPProgressWidget(GUIEngine::Widget* widget);
     void displayGPProgress();
     void displayPostRaceInfo();
+    int  displayEducationResults(int x, int y, bool increase_density);
     int  displayHighscores(int x, int y, bool increase_density);
     int  displayLapDifficulty(int x, int y, bool increase_density);
     int  displayChallengeInfo(int x, int y, bool increase_density);
