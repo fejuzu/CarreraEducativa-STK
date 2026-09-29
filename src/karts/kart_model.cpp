@@ -244,6 +244,9 @@ void KartModel::loadInfo(const XMLNode &node)
             rm.setRotationDegrees(rotation);
             m_hat_location = new core::matrix4(lm * rm * sm);
             hat_node->get("bone", &m_hat_bone);
+            // Carrera Educativa: allow a kart to define its own permanent
+            // helmet/hat mesh. The file is resolved from data/models.
+            hat_node->get("model", &m_hat_name);
         }
     }
 
