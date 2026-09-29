@@ -53,6 +53,7 @@
 #include "modes/demo_world.hpp"
 #include "modes/capture_the_flag.hpp"
 #include "modes/overworld.hpp"
+#include "modes/linear_world.hpp"
 #include "modes/soccer_world.hpp"
 #include "network/network_config.hpp"
 #include "network/stk_host.hpp"
@@ -78,6 +79,7 @@
 #include "main_loop.hpp"
 
 #include <algorithm>
+#include <sstream>
 
 /** Constructor, initialises internal data structures.
  */
@@ -1959,6 +1961,11 @@ void RaceResultGUI::displayPostRaceInfo()
     Highscores *highscore = World::getWorld()->getHighscores();
     int size_esti = highscore ? highscore->getNumberEntries() + 1 : 1;
 
+    LinearWorld* educational_world =
+        dynamic_cast<LinearWorld*>(World::getWorld());
+    if (educational_world && educational_world->isEducationEnabled())
+        size_esti += 4;
+
     if (!RaceManager::get()->isSoccerMode())
         size_esti += RaceManager::get()->modeHasLaps() ? 4 : 2;
     
@@ -1967,7 +1974,10 @@ void RaceResultGUI::displayPostRaceInfo()
     
     int size_esti_real = size_esti * m_distance_between_meta_rows;
 
-    int current_y = displayHighscores(x, y,
+    int current_y = displayEducationResults(x, y,
+                        size_esti_real > UserConfigParams::m_height * 0.7f);
+
+    current_y = displayHighscores(x, current_y,
                         size_esti_real > UserConfigParams::m_height * 0.7f);
 
     // Display the number of laps, difficulty, and the best lap time if applicable
@@ -1980,6 +1990,69 @@ void RaceResultGUI::displayPostRaceInfo()
         current_y = displayChallengeInfo(x, current_y,
                         size_esti_real > UserConfigParams::m_height * 0.85f);
 } // displayPostRaceInfo
+
+//-----------------------------------------------------------------------------
+/** Displays the Carrera Educativa question summary. */
+int RaceResultGUI::displayEducationResults(int x, int y, bool increase_density)
+{
+    (void)increase_density;
+
+    LinearWorld* linear_world =
+        dynamic_cast<LinearWorld*>(World::getWorld());
+    if (!linear_world || !linear_world->isEducationEnabled())
+        return y;
+
+    const Education::QuestionManager& questions =
+        linear_world->getEducationQuestionManager();
+
+    const std::size_t answered = questions.getAnsweredCount();
+    const std::size_t correct = questions.getCorrectCount();
+    const std::size_t incorrect = questions.getIncorrectCount();
+    const std::size_t total = Education::QuestionManager::QUESTIONS_PER_RACE;
+    const int accuracy = answered > 0
+        ? (int)((correct * 100) / answered)
+        : 0;
+
+    gui::ScalableFont* font = GUIEngine::getFont();
+    const int line_height = GUIEngine::getFontHeight();
+    const int right = (int)(UserConfigParams::m_width * 0.96f);
+    const video::SColor title_color(255, 255, 215, 0);
+    const video::SColor text_color(255, 255, 255, 255);
+
+    core::stringw title = StringUtils::utf8ToWide("Resultados educativos");
+    font->draw(title,
+        core::recti(x, y, right, y + line_height),
+        title_color, false, false, NULL, true);
+    y += line_height;
+
+    std::ostringstream stream;
+    stream << "Correctas: " << correct << " / " << total;
+    core::stringw correct_text = StringUtils::utf8ToWide(stream.str());
+    font->draw(correct_text,
+        core::recti(x, y, right, y + line_height),
+        text_color, false, false, NULL, true);
+    y += line_height;
+
+    stream.str("");
+    stream.clear();
+    stream << "Incorrectas: " << incorrect << " / " << total;
+    core::stringw incorrect_text = StringUtils::utf8ToWide(stream.str());
+    font->draw(incorrect_text,
+        core::recti(x, y, right, y + line_height),
+        text_color, false, false, NULL, true);
+    y += line_height;
+
+    stream.str("");
+    stream.clear();
+    stream << "Precision: " << accuracy << "%";
+    core::stringw accuracy_text = StringUtils::utf8ToWide(stream.str());
+    font->draw(accuracy_text,
+        core::recti(x, y, right, y + line_height),
+        text_color, false, false, NULL, true);
+    y += line_height;
+
+    return y;
+}
 
 //-----------------------------------------------------------------------------
 /** Displays the highscores, if applicable for this game mode. Returns the
