@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<stkgui>
+    <div x="3%" y="3%" width="94%" height="94%" layout="vertical-row">
+        <label id="counter" width="100%" height="7%" text_align="center" text="PREGUNTA" />
+        <label id="topic" width="100%" height="7%" text_align="center" text="Tema" />
+        <spacer width="10" height="2%" />
+
+        <label id="question" width="100%" height="24%" text_align="center"
+               word_wrap="true" text="Pregunta" />
+
+        <button id="answer_a" width="94%" height="10%" align="center" text="A" />
+        <button id="answer_b" width="94%" height="10%" align="center" text="B" />
+        <button id="answer_c" width="94%" height="10%" align="center" text="C" />
+        <button id="answer_d" width="94%" height="10%" align="center" text="D" />
+
+        <label id="feedback" width="100%" height="12%" text_align="center"
+               word_wrap="true" text="Resultado" />
+
+        <button id="continue" width="50%" height="8%" align="center"
+                text="Continuar" />
+    </div>
+</stkgui>
