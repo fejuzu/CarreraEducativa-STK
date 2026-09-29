@@ -55,7 +55,7 @@ struct AnswerResult
 class QuestionManager
 {
 public:
-    static const std::size_t QUESTIONS_PER_RACE = 20;
+    static const std::size_t QUESTIONS_PER_RACE = 10;
 
 private:
     std::vector<Question> m_question_bank;
@@ -73,8 +73,8 @@ public:
     const std::vector<Question>& getQuestionBank() const;
 
     /**
-     * Selects exactly 20 unique questions for one race.
-     * Returns false if the bank has fewer than 20 valid questions.
+     * Selects exactly 10 unique questions for one race.
+     * Returns false if the bank has fewer than 10 valid questions.
      */
     bool startRace(unsigned int seed = 0);
 
