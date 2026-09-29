@@ -72,7 +72,7 @@ private:
     /* if set then the game will auto end after this time for networking */
     float       m_finish_timeout;
 
-    /** Educational mode: 20 mandatory questions distributed through the race. */
+    /** Educational mode: 10 mandatory questions distributed through the race. */
     Education::QuestionManager m_education_questions;
     bool                       m_education_enabled;
 
@@ -164,6 +164,13 @@ public:
     int           getTicksAtLapForKart(const int kart_id) const;
     float         getLiveTimeDifference() const { return m_live_time_difference; }
     bool          hasValidTimeDifference() const { return m_valid_reference_time; }
+
+    /** Educational race summary, used by the post-race results screen. */
+    bool isEducationEnabled() const { return m_education_enabled; }
+    const Education::QuestionManager& getEducationQuestionManager() const
+    {
+        return m_education_questions;
+    }
 
     virtual  void getKartsDisplayInfo(
                   std::vector<RaceGUIBase::KartIconDisplayInfo> *info) OVERRIDE;
