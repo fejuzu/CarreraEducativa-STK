@@ -17,6 +17,8 @@
 namespace Education
 {
 
+const std::size_t QuestionManager::QUESTIONS_PER_RACE;
+
 Question::Question()
     : id(0),
       level(1),
