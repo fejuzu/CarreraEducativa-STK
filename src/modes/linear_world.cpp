@@ -68,27 +68,13 @@ LinearWorld::LinearWorld() : WorldWithRank()
     m_last_lap_sfx_playing = false;
     m_fastest_lap_ticks    = INT_MAX;
 
-    // Carrera Educativa is initially limited to single-player linear races.
-    // Networking will be enabled only after question state is authoritative
-    // on the server.
+    // Carrera Educativa is prepared in reset(), once the race configuration
+    // and local players are fully available.
     m_education_enabled = false;
-    m_education_questions.clear();
-    if (!NetworkConfig::get()->isNetworking() &&
-        RaceManager::get()->getNumLocalPlayers() == 1 &&
-        (RaceManager::get()->getMinorMode() ==
-             RaceManager::MINOR_MODE_NORMAL_RACE ||
-         RaceManager::get()->getMinorMode() ==
-             RaceManager::MINOR_MODE_TIME_TRIAL))
-    {
-        m_education_questions.setQuestionBank(
-            Education::createDemoQuestionBank());
-        m_education_enabled = m_education_questions.startRace();
-    }
     m_valid_reference_time = false;
     m_live_time_difference = 0.0f;
     m_fastest_lap_kart_name = "";
     m_check_structure_compatible = false;
-    m_education_enabled = false;
 }   // LinearWorld
 
 // ----------------------------------------------------------------------------
@@ -132,6 +118,23 @@ void LinearWorld::reset(bool restart)
     m_last_lap_sfx_played  = false;
     m_last_lap_sfx_playing = false;
     m_fastest_lap_ticks    = INT_MAX;
+
+    // Initialise a fresh educational question set for every offline
+    // single-player linear race. Doing this in reset() is important:
+    // the race mode and local player count are already final here.
+    m_education_enabled = false;
+    m_education_questions.clear();
+    if (!NetworkConfig::get()->isNetworking() &&
+        RaceManager::get()->getNumLocalPlayers() == 1 &&
+        (RaceManager::get()->getMinorMode() ==
+             RaceManager::MINOR_MODE_NORMAL_RACE ||
+         RaceManager::get()->getMinorMode() ==
+             RaceManager::MINOR_MODE_TIME_TRIAL))
+    {
+        m_education_questions.setQuestionBank(
+            Education::createDemoQuestionBank());
+        m_education_enabled = m_education_questions.startRace();
+    }
 
     const unsigned int kart_amount = (unsigned int) m_karts.size();
     for(unsigned int i=0; i<kart_amount; i++)
