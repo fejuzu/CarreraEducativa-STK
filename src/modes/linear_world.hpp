@@ -18,6 +18,7 @@
 #ifndef HEADER_LINEAR_WORLD_HPP
 #define HEADER_LINEAR_WORLD_HPP
 
+#include "education/question_manager.hpp"
 #include "modes/world_with_rank.hpp"
 #include "utils/aligned_array.hpp"
 
@@ -70,6 +71,14 @@ private:
 
     /* if set then the game will auto end after this time for networking */
     float       m_finish_timeout;
+
+    /** Educational mode: 20 mandatory questions distributed through the race. */
+    Education::QuestionManager m_education_questions;
+    bool                       m_education_enabled;
+
+    /** Opens the next mandatory question when the player reaches its
+     *  virtual checkpoint. */
+    void updateEducationalQuestions();
 
     /** This calculate the time difference between the second kart in the race
      *  (there must be at least two) and the first kart in the race
