@@ -244,21 +244,12 @@ void TracksAndGPScreen::init()
         }
         assert(screenshots.size() > 0);
 
-        if (PlayerManager::getCurrentPlayer()->isLocked(gp->getId()) &&
-            RaceManager::get()->getNumLocalPlayers() == 1)
-        {
-            gps_widget->addAnimatedItem(_("Locked!"), "locked",
-                                        screenshots, 1.5f,
-                                        LOCKED_BADGE | TROPHY_BADGE,
-                                        IconButtonWidget::ICON_PATH_TYPE_ABSOLUTE);
-        }
-        else
-        {
-            gps_widget->addAnimatedItem(gp->getName(),
-                                        gp->getId(), screenshots, 1.5f,
-                                        TROPHY_BADGE,
-                                        IconButtonWidget::ICON_PATH_TYPE_ABSOLUTE);
-        }
+        // Carrera Educativa exposes every Grand Prix for testing and
+        // course selection; story-mode progression does not lock this screen.
+        gps_widget->addAnimatedItem(gp->getName(),
+                                    gp->getId(), screenshots, 1.5f,
+                                    TROPHY_BADGE,
+                                    IconButtonWidget::ICON_PATH_TYPE_ABSOLUTE);
     }
 
     gps_widget->updateItemDisplay();
@@ -346,15 +337,8 @@ void TracksAndGPScreen::buildTrackList()
     for (unsigned int i = 0; i < tracks.size(); i++)
     {
         Track *curr = tracks.get(i);
-        if (PlayerManager::getCurrentPlayer()->isLocked(curr->getIdent()) &&
-            RaceManager::get()->getNumLocalPlayers() == 1)
-        {
-            tracks_widget->addItem(
-                _("Locked: solve active challenges to gain access to more!"),
-                "locked", curr->getScreenshotFile(), LOCKED_BADGE,
-                IconButtonWidget::ICON_PATH_TYPE_ABSOLUTE);
-        }
-        else if (PlayerManager::getCurrentPlayer()->isFavoriteTrack(curr->getIdent()))
+        // Carrera Educativa: all standard race tracks are selectable.
+        if (PlayerManager::getCurrentPlayer()->isFavoriteTrack(curr->getIdent()))
         {
             tracks_widget->addItem(curr->getName(), curr->getIdent(),
                 curr->getScreenshotFile(), HEART_BADGE,
