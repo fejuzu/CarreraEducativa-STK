@@ -26,6 +26,7 @@
 #include <vector>
 
 class SFXBase;
+class ItemState;
 
 /*
  * A 'linear world' is a subcategory of world used in 'standard' races, i.e.
@@ -72,13 +73,28 @@ private:
     /* if set then the game will auto end after this time for networking */
     float       m_finish_timeout;
 
-    /** Educational mode: 10 mandatory questions distributed through the race. */
+    /** Educational mode: questions are triggered by dedicated gift gates. */
     Education::QuestionManager m_education_questions;
     bool                       m_education_enabled;
 
-    /** Opens the next mandatory question when the player reaches its
-     *  virtual checkpoint. */
+    /** Item ids for each educational gift gate. Each gate contains several
+     *  bonus boxes across the track so the player can collect one easily. */
+    std::vector<std::vector<unsigned int> > m_education_gate_item_ids;
+    std::vector<unsigned int>               m_education_gate_nodes;
+    std::vector<unsigned int>               m_education_rescue_nodes;
+    std::vector<float>                      m_education_gate_distances;
+
+    /** One-shot rescue node used when the player skips a mandatory gift gate. */
+    int m_education_forced_rescue_node;
+
+    /** Creates rows of mandatory gift boxes along the main driveline. */
+    void setupEducationalGiftGates();
+
+    /** Checks whether the current mandatory gift gate was skipped. */
     void updateEducationalQuestions();
+
+    /** Returns the gate index containing item_id, or -1. */
+    int findEducationalGiftGate(unsigned int item_id) const;
 
     /** This calculate the time difference between the second kart in the race
      *  (there must be at least two) and the first kart in the race
@@ -171,6 +187,13 @@ public:
     {
         return m_education_questions;
     }
+
+    /** True when an item belongs to one of the mandatory educational gates. */
+    bool isEducationalBonusBox(const ItemState* item) const;
+
+    /** Handles a gift collision. Returns true when normal STK item handling
+     *  must be suppressed (question/rescue handled by educational mode). */
+    bool handleEducationalBonusBox(AbstractKart* kart, ItemState* item);
 
     virtual  void getKartsDisplayInfo(
                   std::vector<RaceGUIBase::KartIconDisplayInfo> *info) OVERRIDE;
