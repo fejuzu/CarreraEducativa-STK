@@ -304,6 +304,12 @@ build_deps()
             check_error
             touch "$DIRNAME/deps-$ARCH_OPTION/shaderc-deps.stamp"
         fi
+
+        # Work around shaderc's broken SHADERC_SKIP_INSTALL handling:
+        # glslang install exports reference SPIRV-Tools-opt even when
+        # SPIRV-Tools installation is disabled.
+        sed -i 's|set(GLSLANG_ENABLE_INSTALL $<NOT:${SKIP_GLSLANG_INSTALL}>)|set(GLSLANG_ENABLE_INSTALL OFF)|' \
+            third_party/CMakeLists.txt
         
         cmake . -DCMAKE_TOOLCHAIN_FILE=../../../cmake/Toolchain-android.cmake  \
                 -DHOST=$HOST -DARCH=$ARCH -DCMAKE_C_FLAGS="-fpic -O3"          \
