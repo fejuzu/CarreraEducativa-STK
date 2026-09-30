@@ -389,10 +389,20 @@ build_deps()
             echo "Compiling $ARCH_OPTION libadrenotools"
             mkdir -p "$DIRNAME/deps-$ARCH_OPTION/libadrenotools"
             mkdir -p "$DIRNAME/mesa/arm64-v8a"
-            git clone "$DIRNAME/../lib/libadrenotools" "$DIRNAME/deps-$ARCH_OPTION/libadrenotools"
+
+            LIBADRENO_SRC="$DIRNAME/../lib/libadrenotools"
+            if [ -d "$LIBADRENO_SRC/.git" ]; then
+                git clone "$LIBADRENO_SRC" "$DIRNAME/deps-$ARCH_OPTION/libadrenotools"
+            else
+                rm -rf "$DIRNAME/deps-$ARCH_OPTION/libadrenotools"
+                git clone https://github.com/bylaws/libadrenotools.git \
+                    "$DIRNAME/deps-$ARCH_OPTION/libadrenotools"
+                cd "$DIRNAME/deps-$ARCH_OPTION/libadrenotools"
+                git checkout 8fae8ce254dfc1344527e05301e43f37dea2df80
+            fi
 
             cd "$DIRNAME/deps-$ARCH_OPTION/libadrenotools"
-            git submodule update --init
+            git submodule update --init --recursive
             cmake . -DCMAKE_TOOLCHAIN_FILE=../../../cmake/Toolchain-android.cmake \
                     -DHOST=$HOST -DARCH=$ARCH -DCMAKE_C_FLAGS="-fpic -O3 -g"      \
                     -DCMAKE_CXX_FLAGS="-fpic -O3 -g"                              \
