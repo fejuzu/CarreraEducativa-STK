@@ -56,8 +56,6 @@
                                 I18N="In the main screen"  text="Options" label_location="hover"/>
                     <icon-button id="help" width="64" height="64" icon="gui/icons/main_help.png"
                                 I18N="In the main screen" text="Help" label_location="hover"/>
-                    <icon-button id="startTutorial" width="64" height="64" icon="gui/icons/tutorial.png"
-                                I18N="In the main screen" text="Tutorial" label_location="hover"/>
                     <icon-button id="highscores" width="64" height="64" icon="gui/icons/crown.png"
                                 I18N="In the main screen" text="High Scores" label_location="hover"/>
                     <icon-button id="achievements" width="64" height="64" icon="gui/icons/gp_copy.png"
