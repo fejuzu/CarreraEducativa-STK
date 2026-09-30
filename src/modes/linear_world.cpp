@@ -77,6 +77,7 @@ LinearWorld::LinearWorld() : WorldWithRank()
     // and local players are fully available.
     m_education_enabled = false;
     m_education_forced_rescue_node = -1;
+    m_education_rescue_refresh_pending = false;
     m_valid_reference_time = false;
     m_live_time_difference = 0.0f;
     m_fastest_lap_kart_name = "";
@@ -130,6 +131,7 @@ void LinearWorld::reset(bool restart)
     // the race mode and local player count are already final here.
     m_education_enabled = false;
     m_education_forced_rescue_node = -1;
+    m_education_rescue_refresh_pending = false;
     m_education_questions.clear();
     if (!NetworkConfig::get()->isNetworking() &&
         RaceManager::get()->getNumLocalPlayers() == 1 &&
@@ -376,7 +378,8 @@ bool LinearWorld::handleEducationalBonusBox(AbstractKart* kart, ItemState* item)
         {
             m_education_forced_rescue_node =
                 (int)m_education_rescue_nodes[answered];
-            RescueAnimation::create(kart, true);
+            if (RescueAnimation::create(kart, true) != NULL)
+                m_education_rescue_refresh_pending = true;
         }
         return true;
     }
@@ -455,6 +458,26 @@ void LinearWorld::updateEducationalQuestions()
     }
 
     const unsigned int kart_id = player_kart->getWorldKartId();
+
+    // During a rescue, updateTrackSectors() intentionally skips the kart.
+    // On the frame in which RescueAnimation ends, the cached educational
+    // distance can therefore still describe the position beyond the missed
+    // gate. If we test it immediately, another rescue starts and the referee
+    // appears to never release the player. Refresh the sector once first.
+    if (m_education_rescue_refresh_pending)
+    {
+        TrackSector* sector = getTrackSector(kart_id);
+        if (sector)
+            sector->update(player_kart->getFrontXYZ());
+
+        m_kart_info[kart_id].m_overall_distance =
+            m_kart_info[kart_id].m_finished_laps *
+                Track::getCurrentTrack()->getTrackLength() +
+            getDistanceDownTrackForKart(kart_id, true);
+
+        m_education_rescue_refresh_pending = false;
+        return;
+    }
     const float current_distance = getOverallDistance(kart_id);
     const float tolerance =
         std::max(12.0f, Track::getCurrentTrack()->getTrackLength() * 0.015f);
@@ -463,7 +486,8 @@ void LinearWorld::updateEducationalQuestions()
     {
         m_education_forced_rescue_node =
             (int)m_education_rescue_nodes[gate];
-        RescueAnimation::create(player_kart, true);
+        if (RescueAnimation::create(player_kart, true) != NULL)
+            m_education_rescue_refresh_pending = true;
     }
 }
 
