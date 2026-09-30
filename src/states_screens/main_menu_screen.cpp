@@ -94,13 +94,6 @@ void MainMenuScreen::loadedFromFile()
     RibbonWidget* rw_top = getWidget<RibbonWidget>("menu_toprow");
     assert(rw_top != NULL);
     
-    if (track_manager->getTrack("overworld") == NULL ||
-        track_manager->getTrack("introcutscene") == NULL ||
-        track_manager->getTrack("introcutscene2") == NULL)
-    {
-        rw_top->removeChildNamed("story");
-    }
-
 #if DEBUG_MENU_ITEM != 1
     RibbonWidget* rw = getWidget<RibbonWidget>("menu_bottomrow");
     rw->removeChildNamed("test_gpwin");
@@ -165,10 +158,15 @@ void MainMenuScreen::init()
 #ifndef SERVER_ONLY
     if (addons_manager && addons_manager->isLoading())
     {
+        // The educational main menu hides the Addons button.
+        // Keep this null-safe because the widget may not exist in the layout.
         IconButtonWidget* w = getWidget<IconButtonWidget>("addons");
-        w->setActive(false);
-        w->resetAllBadges();
-        w->setBadge(LOADING_BADGE);
+        if (w != NULL)
+        {
+            w->setActive(false);
+            w->resetAllBadges();
+            w->setBadge(LOADING_BADGE);
+        }
     }
 
     // Initialize news iteration, show dialog when there's important news
