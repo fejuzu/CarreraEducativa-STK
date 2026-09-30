@@ -1,37 +1,48 @@
 # Carrera Educativa STK
 
-Esta rama agrega la base educativa sobre el fork de SuperTuxKart.
+Esta rama agrega el modo educativo sobre el fork de SuperTuxKart.
 
-## Reglas funcionales acordadas
+## Reglas actuales de prueba
 
-- Plataforma objetivo principal: Android.
-- 5 energías por jugador al día.
-- Se pueden iniciar carreras desde las 07:00 hasta antes de las 21:00.
-- Una carrera iniciada antes de las 21:00 puede terminar después de esa hora.
-- Cada nivel utiliza 20 preguntas obligatorias.
+- Plataforma objetivo final: Android.
+- El sistema de energías queda pospuesto mientras se realizan pruebas.
+- Cada carrera educativa usa 10 preguntas obligatorias.
 - Tipos de pregunta: opción múltiple y verdadero/falso.
-- Una respuesta correcta entrega una recompensa aleatoria.
-- Una respuesta incorrecta aplica un castigo aleatorio.
-- Se registrará cada respuesta, incluyendo tiempo, tema, subtema y respuesta correcta.
-- Los reportes mostrarán qué preguntas y temas necesita reforzar el jugador.
+- Las preguntas ya no aparecen por distancia automáticamente.
+- Se crean 10 zonas de regalos educativos a lo largo de la pista.
+- Cada zona contiene varias cajas de regalo atravesando el ancho de la pista
+  para que el jugador pueda recoger una con facilidad.
+- Al recoger una caja de una zona educativa, la carrera se pausa y aparece la
+  siguiente pregunta.
+- Respuesta correcta: recompensa aleatoria (turbo, nitro o power-up).
+- Respuesta incorrecta: penalización aleatoria (reducción de velocidad,
+  limitación temporal o pérdida de nitro).
+- Las zonas educativas son obligatorias: si el jugador pasa la siguiente zona
+  sin recoger un regalo, se activa la animación normal de rescate y el kart
+  vuelve a una posición inmediatamente anterior a esa fila de regalos.
+- Los karts controlados por IA no consumen los regalos educativos.
+- Al terminar la carrera se muestran respuestas correctas, incorrectas y
+  porcentaje de precisión.
 
-## Primera implementación
+## Implementación
 
-El módulo `src/education/question_manager.*` mantiene un banco de preguntas,
-selecciona exactamente 20 preguntas únicas para una carrera y registra cada
-respuesta en orden. No permite avanzar internamente a la siguiente pregunta
-sin registrar primero la actual.
+`src/education/question_manager.*` administra el banco de preguntas, selecciona
+10 preguntas únicas para la carrera y registra cada respuesta.
 
-`src/education/education_rules.hpp` contiene las reglas básicas de horario y
-energía. Más adelante la autoridad real de estas reglas estará en la API del
-servidor para evitar manipulación local.
+`src/education/question_dialog.*` muestra la pregunta, bloquea el avance hasta
+responder y aplica recompensa o penalización.
 
-## Próximos pasos
+`src/modes/linear_world.*` crea las filas de regalos educativos, controla el
+orden obligatorio y solicita el rescate cuando una fila es omitida.
 
-1. Crear `QuestionDialog` usando `GUIEngine::ModalDialog`.
-2. Activarlo desde un checkpoint/objeto educativo de pista.
-3. Pausar la interacción del jugador mientras responde.
-4. Correcta -> asignar power-up de STK.
-5. Incorrecta -> aplicar penalización.
-6. Conectar resultados de la carrera con la API y MySQL.
-7. Añadir reportes por tema/subtema.
+`src/items/item_manager.cpp` distingue los regalos educativos de las cajas de
+power-up normales. Una caja educativa abre una pregunta en lugar de entregar el
+power-up estándar de SuperTuxKart.
+
+## Pendiente
+
+- Sustituir el banco demo por el banco real de preguntas.
+- Persistencia/API/MySQL.
+- Reportes detallados por tema y subtema.
+- Ajustes visuales de personajes y UI.
+- Compilación y pruebas Android/APK.
