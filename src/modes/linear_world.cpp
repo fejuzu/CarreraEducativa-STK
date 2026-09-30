@@ -1138,6 +1138,17 @@ unsigned int LinearWorld::getRescuePositionIndex(AbstractKart *kart)
 {
     const unsigned int kart_id = kart->getWorldKartId();
 
+    // Mandatory educational gift gates can request a one-shot rescue to a
+    // specific driveline node just before the row that was skipped.
+    if (m_education_forced_rescue_node >= 0 &&
+        kart->getController()->isLocalPlayerController())
+    {
+        const unsigned int forced =
+            (unsigned int)m_education_forced_rescue_node;
+        m_education_forced_rescue_node = -1;
+        return forced;
+    }
+
     getTrackSector(kart_id)->rescue();
     // Setting XYZ for the kart is important since otherwise the kart
     // will not detect the right material again when doing the next
