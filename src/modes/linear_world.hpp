@@ -87,6 +87,12 @@ private:
     /** One-shot rescue node used when the player skips a mandatory gift gate. */
     int m_education_forced_rescue_node;
 
+    /** True after an educational rescue starts. The first frame after the
+     *  rescue animation ends is used to refresh the kart's track sector
+     *  before running the anti-skip test again. This prevents an immediate
+     *  second rescue caused by the stale pre-rescue distance. */
+    bool m_education_rescue_refresh_pending;
+
     /** Creates rows of mandatory gift boxes along the main driveline. */
     void setupEducationalGiftGates();
 
