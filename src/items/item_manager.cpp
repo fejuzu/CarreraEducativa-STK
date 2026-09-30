@@ -28,6 +28,7 @@
 #include "karts/abstract_kart.hpp"
 #include "karts/controller/spare_tire_ai.hpp"
 #include "modes/easter_egg_hunt.hpp"
+#include "modes/linear_world.hpp"
 #include "modes/profile_world.hpp"
 #include "network/network_config.hpp"
 #include "network/race_event_manager.hpp"
@@ -375,6 +376,17 @@ Item* ItemManager::placeItem(ItemState::ItemType type, const Vec3& xyz,
 void ItemManager::collectedItem(ItemState *item, AbstractKart *kart)
 {
     assert(item);
+
+    // Carrera Educativa: dedicated gift-gate boxes do not grant the normal
+    // SuperTuxKart random item. They open the mandatory question instead.
+    // AI karts are also prevented from consuming these boxes.
+    LinearWorld* linear_world = dynamic_cast<LinearWorld*>(World::getWorld());
+    if (linear_world && linear_world->isEducationalBonusBox(item))
+    {
+        if (linear_world->handleEducationalBonusBox(kart, item))
+            return;
+    }
+
     item->collected(kart);
     // Inform the world - used for Easter egg hunt
     World::getWorld()->collectedItem(kart, item);
