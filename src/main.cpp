@@ -2029,6 +2029,14 @@ void initRest()
     // The rest will be read later (since the rest needs the unlock- and
     // achievement managers to be created, which can only be created later).
     PlayerManager::create();
+
+    // IGH EDUCATIVO does not use SuperTuxKart's public online services,
+    // add-ons or news feed. Disable the original STK internet feature
+    // silently so no first-run server/privacy prompt is shown.
+    UserConfigParams::m_internet_status =
+        Online::RequestManager::IPERM_NOT_ALLOWED;
+    user_config->saveConfig();
+
     Online::RequestManager::get()->startNetworkThread();
 #ifndef SERVER_ONLY
     if (!GUIEngine::isNoGraphics())
@@ -2597,7 +2605,7 @@ int main(int argc, char *argv[])
                 wiimote_manager->askUserToConnectWiimotes();
             }
 #endif
-            askForInternetPermission();
+            // STK internet permission prompt intentionally disabled for IGH EDUCATIVO.
         }
         else
         {

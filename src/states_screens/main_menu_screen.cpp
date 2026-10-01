@@ -40,7 +40,6 @@
 #include "modes/cutscene_world.hpp"
 #include "modes/demo_world.hpp"
 #include "modes/overworld.hpp"
-#include "modes/tutorial_utils.hpp"
 #include "network/network_config.hpp"
 #include "online/request_manager.hpp"
 #include "states_screens/addons_screen.hpp"
@@ -95,13 +94,6 @@ void MainMenuScreen::loadedFromFile()
     RibbonWidget* rw_top = getWidget<RibbonWidget>("menu_toprow");
     assert(rw_top != NULL);
     
-    if (track_manager->getTrack("overworld") == NULL ||
-        track_manager->getTrack("introcutscene") == NULL ||
-        track_manager->getTrack("introcutscene2") == NULL)
-    {
-        rw_top->removeChildNamed("story");
-    }
-
 #if DEBUG_MENU_ITEM != 1
     RibbonWidget* rw = getWidget<RibbonWidget>("menu_bottomrow");
     rw->removeChildNamed("test_gpwin");
@@ -166,10 +158,15 @@ void MainMenuScreen::init()
 #ifndef SERVER_ONLY
     if (addons_manager && addons_manager->isLoading())
     {
+        // The educational main menu hides the Addons button.
+        // Keep this null-safe because the widget may not exist in the layout.
         IconButtonWidget* w = getWidget<IconButtonWidget>("addons");
-        w->setActive(false);
-        w->resetAllBadges();
-        w->setBadge(LOADING_BADGE);
+        if (w != NULL)
+        {
+            w->setActive(false);
+            w->resetAllBadges();
+            w->setBadge(LOADING_BADGE);
+        }
     }
 
     // Initialize news iteration, show dialog when there's important news
@@ -336,34 +333,10 @@ void MainMenuScreen::onUpdate(float delta)
         m_user_id->setText(player->getName());
     }
 
-    // Ask if user want to play tutorial when profile is newly created
-    if (player->getUseFrequency() != 0)
-        return;
-
-#ifdef ANDROID
-    // Don't show tutorial dialog on Android TV
-    if (SDL_IsAndroidTV())
-        return;
-#endif
-
-    player->incrementUseFrequency();
-    class PlayTutorial :
-          public MessageDialog::IConfirmDialogListener
-    {
-    public:
-        virtual void onConfirm()
-        {
-            GUIEngine::ModalDialog::dismiss();
-            TutorialUtils::startTutorial();
-        }   // onConfirm
-    };   // PlayTutorial
-
-    MessageDialog* dialog =
-    new MessageDialog(_("Would you like to play the tutorial of the game?"),
-        MessageDialog::MESSAGE_DIALOG_YESNO, new PlayTutorial(),
-        true/*delete_listener*/, true/*from_queue*/);
-    GUIEngine::DialogQueue::get()->pushDialog(dialog,
-        false/*closes_any_dialog*/);
+    // IGH EDUCATIVO does not expose the SuperTuxKart tutorial.
+    // Still advance the profile use counter so first-use state is not kept forever.
+    if (player->getUseFrequency() == 0)
+        player->incrementUseFrequency();
 #endif
 }   // onUpdate
 
@@ -567,10 +540,6 @@ void MainMenuScreen::eventCallback(Widget* widget, const std::string& name,
     else if (selection == "help")
     {
         HelpScreen1::getInstance()->push();
-    }
-    else if (selection == "startTutorial")
-    {
-        TutorialUtils::startTutorial();
     }
     else if (selection == "story")
     {

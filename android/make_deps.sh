@@ -238,7 +238,8 @@ build_deps()
                 -DBUILD_TESTING=OFF -DBUILD_CURL_EXE=OFF                      \
                 -DCURL_USE_MBEDTLS=ON -DUSE_ZLIB=ON -DCURL_USE_OPENSSL=OFF    \
                 -DCURL_USE_LIBSSH=OFF -DCURL_USE_LIBSSH2=OFF                  \
-                -DCURL_USE_GSSAPI=OFF -DUSE_NGHTTP2=OFF -DUSE_QUICHE=OFF      \
+                -DCURL_USE_LIBPSL=OFF -DCURL_USE_GSSAPI=OFF                    \
+                -DUSE_NGHTTP2=OFF -DUSE_QUICHE=OFF                             \
                 -DHTTP_ONLY=ON -DCURL_CA_BUNDLE=none -DCURL_CA_PATH=none      \
                 -DENABLE_THREADED_RESOLVER=ON -DCMAKE_C_FLAGS="-fpic -O3 -g" &&
         make -j $(($(nproc) + 1))
@@ -303,6 +304,12 @@ build_deps()
             check_error
             touch "$DIRNAME/deps-$ARCH_OPTION/shaderc-deps.stamp"
         fi
+
+        # Work around shaderc's broken SHADERC_SKIP_INSTALL handling:
+        # glslang install exports reference SPIRV-Tools-opt even when
+        # SPIRV-Tools installation is disabled.
+        sed -i 's|set(GLSLANG_ENABLE_INSTALL $<NOT:${SKIP_GLSLANG_INSTALL}>)|set(GLSLANG_ENABLE_INSTALL OFF)|' \
+            third_party/CMakeLists.txt
         
         cmake . -DCMAKE_TOOLCHAIN_FILE=../../../cmake/Toolchain-android.cmake  \
                 -DHOST=$HOST -DARCH=$ARCH -DCMAKE_C_FLAGS="-fpic -O3"          \
@@ -382,10 +389,20 @@ build_deps()
             echo "Compiling $ARCH_OPTION libadrenotools"
             mkdir -p "$DIRNAME/deps-$ARCH_OPTION/libadrenotools"
             mkdir -p "$DIRNAME/mesa/arm64-v8a"
-            git clone "$DIRNAME/../lib/libadrenotools" "$DIRNAME/deps-$ARCH_OPTION/libadrenotools"
+
+            LIBADRENO_SRC="$DIRNAME/../lib/libadrenotools"
+            if [ -d "$LIBADRENO_SRC/.git" ]; then
+                git clone "$LIBADRENO_SRC" "$DIRNAME/deps-$ARCH_OPTION/libadrenotools"
+            else
+                rm -rf "$DIRNAME/deps-$ARCH_OPTION/libadrenotools"
+                git clone https://github.com/bylaws/libadrenotools.git \
+                    "$DIRNAME/deps-$ARCH_OPTION/libadrenotools"
+                cd "$DIRNAME/deps-$ARCH_OPTION/libadrenotools"
+                git checkout 8fae8ce254dfc1344527e05301e43f37dea2df80
+            fi
 
             cd "$DIRNAME/deps-$ARCH_OPTION/libadrenotools"
-            git submodule update --init
+            git submodule update --init --recursive
             cmake . -DCMAKE_TOOLCHAIN_FILE=../../../cmake/Toolchain-android.cmake \
                     -DHOST=$HOST -DARCH=$ARCH -DCMAKE_C_FLAGS="-fpic -O3 -g"      \
                     -DCMAKE_CXX_FLAGS="-fpic -O3 -g"                              \

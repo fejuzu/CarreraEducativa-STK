@@ -18,6 +18,7 @@
 #ifndef HEADER_LINEAR_WORLD_HPP
 #define HEADER_LINEAR_WORLD_HPP
 
+#include "education/question_manager.hpp"
 #include "modes/world_with_rank.hpp"
 #include "utils/aligned_array.hpp"
 
@@ -25,6 +26,7 @@
 #include <vector>
 
 class SFXBase;
+class ItemState;
 
 /*
  * A 'linear world' is a subcategory of world used in 'standard' races, i.e.
@@ -70,6 +72,35 @@ private:
 
     /* if set then the game will auto end after this time for networking */
     float       m_finish_timeout;
+
+    /** Educational mode: questions are triggered by dedicated gift gates. */
+    Education::QuestionManager m_education_questions;
+    bool                       m_education_enabled;
+
+    /** Item ids for each educational gift gate. Each gate contains several
+     *  bonus boxes across the track so the player can collect one easily. */
+    std::vector<std::vector<unsigned int> > m_education_gate_item_ids;
+    std::vector<unsigned int>               m_education_gate_nodes;
+    std::vector<unsigned int>               m_education_rescue_nodes;
+    std::vector<float>                      m_education_gate_distances;
+
+    /** One-shot rescue node used when the player skips a mandatory gift gate. */
+    int m_education_forced_rescue_node;
+
+    /** True after an educational rescue starts. The first frame after the
+     *  rescue animation ends is used to refresh the kart's track sector
+     *  before running the anti-skip test again. This prevents an immediate
+     *  second rescue caused by the stale pre-rescue distance. */
+    bool m_education_rescue_refresh_pending;
+
+    /** Creates rows of mandatory gift boxes along the main driveline. */
+    void setupEducationalGiftGates();
+
+    /** Checks whether the current mandatory gift gate was skipped. */
+    void updateEducationalQuestions();
+
+    /** Returns the gate index containing item_id, or -1. */
+    int findEducationalGiftGate(unsigned int item_id) const;
 
     /** This calculate the time difference between the second kart in the race
      *  (there must be at least two) and the first kart in the race
@@ -155,6 +186,20 @@ public:
     int           getTicksAtLapForKart(const int kart_id) const;
     float         getLiveTimeDifference() const { return m_live_time_difference; }
     bool          hasValidTimeDifference() const { return m_valid_reference_time; }
+
+    /** Educational race summary, used by the post-race results screen. */
+    bool isEducationEnabled() const { return m_education_enabled; }
+    const Education::QuestionManager& getEducationQuestionManager() const
+    {
+        return m_education_questions;
+    }
+
+    /** True when an item belongs to one of the mandatory educational gates. */
+    bool isEducationalBonusBox(const ItemState* item) const;
+
+    /** Handles a gift collision. Returns true when normal STK item handling
+     *  must be suppressed (question/rescue handled by educational mode). */
+    bool handleEducationalBonusBox(AbstractKart* kart, ItemState* item);
 
     virtual  void getKartsDisplayInfo(
                   std::vector<RaceGUIBase::KartIconDisplayInfo> *info) OVERRIDE;

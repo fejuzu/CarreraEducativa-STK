@@ -17,6 +17,9 @@
 
 #include "modes/linear_world.hpp"
 
+#include "education/demo_questions.hpp"
+#include "education/question_dialog.hpp"
+
 #include "achievements/achievements_manager.hpp"
 #include "config/player_manager.hpp"
 #include "audio/music_manager.hpp"
@@ -28,8 +31,11 @@
 #include "karts/controller/controller.hpp"
 #include "karts/ghost_kart.hpp"
 #include "karts/kart_properties.hpp"
+#include "karts/rescue_animation.hpp"
 #include "graphics/material.hpp"
 #include "guiengine/modaldialog.hpp"
+#include "items/item.hpp"
+#include "items/item_manager.hpp"
 #include "physics/physics.hpp"
 #include "network/network_config.hpp"
 #include "network/network_player_profile.hpp"
@@ -51,7 +57,9 @@
 #include "utils/string_utils.hpp"
 #include "utils/translation.hpp"
 
+#include <algorithm>
 #include <climits>
+#include <cmath>
 #include <iostream>
 
 //-----------------------------------------------------------------------------
@@ -64,6 +72,12 @@ LinearWorld::LinearWorld() : WorldWithRank()
     m_last_lap_sfx_played  = false;
     m_last_lap_sfx_playing = false;
     m_fastest_lap_ticks    = INT_MAX;
+
+    // Carrera Educativa is prepared in reset(), once the race configuration
+    // and local players are fully available.
+    m_education_enabled = false;
+    m_education_forced_rescue_node = -1;
+    m_education_rescue_refresh_pending = false;
     m_valid_reference_time = false;
     m_live_time_difference = 0.0f;
     m_fastest_lap_kart_name = "";
@@ -111,6 +125,31 @@ void LinearWorld::reset(bool restart)
     m_last_lap_sfx_played  = false;
     m_last_lap_sfx_playing = false;
     m_fastest_lap_ticks    = INT_MAX;
+
+    // Initialise a fresh educational question set for every offline
+    // single-player linear race. Doing this in reset() is important:
+    // the race mode and local player count are already final here.
+    m_education_enabled = false;
+    m_education_forced_rescue_node = -1;
+    m_education_rescue_refresh_pending = false;
+    m_education_questions.clear();
+    if (!NetworkConfig::get()->isNetworking() &&
+        RaceManager::get()->getNumLocalPlayers() == 1 &&
+        (RaceManager::get()->getMinorMode() ==
+             RaceManager::MINOR_MODE_NORMAL_RACE ||
+         RaceManager::get()->getMinorMode() ==
+             RaceManager::MINOR_MODE_TIME_TRIAL))
+    {
+        m_education_questions.setQuestionBank(
+            Education::createDemoQuestionBank());
+        m_education_enabled = m_education_questions.startRace();
+
+        // Gift gates are static track items. Create them only once for this
+        // World instance; ItemManager::reset() makes them available again on
+        // race restart.
+        if (m_education_enabled && m_education_gate_item_ids.empty())
+            setupEducationalGiftGates();
+    }
 
     const unsigned int kart_amount = (unsigned int) m_karts.size();
     for(unsigned int i=0; i<kart_amount; i++)
@@ -167,6 +206,292 @@ void LinearWorld::reset(bool restart)
 }   // reset
 
 //-----------------------------------------------------------------------------
+/** Carrera Educativa: create ten mandatory gift gates along the main
+ *  driveline. Each gate is a row of five bonus boxes so the player can hit
+ *  one without needing pixel-perfect steering.
+ */
+void LinearWorld::setupEducationalGiftGates()
+{
+    m_education_gate_item_ids.clear();
+    m_education_gate_nodes.clear();
+    m_education_rescue_nodes.clear();
+    m_education_gate_distances.clear();
+
+    DriveGraph* graph = DriveGraph::get();
+    Track* track = Track::getCurrentTrack();
+    if (!graph || !track || !track->getItemManager())
+        return;
+
+    const unsigned int num_nodes = graph->getNumNodes();
+    if (num_nodes == 0)
+        return;
+
+    // Follow successor 0 to stay on the main driveline and avoid placing a
+    // mandatory gate on an optional shortcut/branch.
+    std::vector<unsigned int> main_path;
+    std::vector<bool> visited(num_nodes, false);
+    unsigned int node_index = 0;
+    for (unsigned int guard = 0; guard < num_nodes; guard++)
+    {
+        if (node_index >= num_nodes || visited[node_index])
+            break;
+        visited[node_index] = true;
+        main_path.push_back(node_index);
+
+        DriveNode* node = graph->getNode(node_index);
+        if (!node || node->getNumberOfSuccessors() == 0)
+            break;
+        node_index = node->getSuccessor(0);
+    }
+
+    if (main_path.size() < Education::QuestionManager::QUESTIONS_PER_RACE + 2)
+    {
+        main_path.clear();
+        for (unsigned int i = 0; i < num_nodes; i++)
+            main_path.push_back(i);
+    }
+
+    const float track_length = track->getTrackLength();
+    std::size_t last_path_pos = 0;
+
+    for (std::size_t gate = 0;
+         gate < Education::QuestionManager::QUESTIONS_PER_RACE; gate++)
+    {
+        const float target_distance =
+            track_length * (float)(gate + 1) /
+            (float)(Education::QuestionManager::QUESTIONS_PER_RACE + 1);
+
+        std::size_t begin = gate == 0 ? 0 :
+            std::min(last_path_pos + 2, main_path.size() - 1);
+        std::size_t best_pos = begin;
+        float best_delta = 1.0e30f;
+
+        for (std::size_t p = begin; p < main_path.size(); p++)
+        {
+            DriveNode* candidate = graph->getNode(main_path[p]);
+            if (!candidate)
+                continue;
+            const float delta =
+                std::fabs(candidate->getDistanceFromStart() - target_distance);
+            if (delta < best_delta)
+            {
+                best_delta = delta;
+                best_pos = p;
+            }
+            // Once we are clearly beyond the target, no need to scan the
+            // complete loop.
+            if (candidate->getDistanceFromStart() >
+                target_distance + 25.0f && best_delta < 25.0f)
+                break;
+        }
+
+        last_path_pos = best_pos;
+        const unsigned int gate_node_index = main_path[best_pos];
+        DriveNode* gate_node = graph->getNode(gate_node_index);
+        if (!gate_node)
+            continue;
+
+        const std::size_t rescue_pos = best_pos > 3 ? best_pos - 3 : 0;
+        const unsigned int rescue_node_index = main_path[rescue_pos];
+
+        m_education_gate_nodes.push_back(gate_node_index);
+        m_education_rescue_nodes.push_back(rescue_node_index);
+        m_education_gate_distances.push_back(gate_node->getDistanceFromStart());
+
+        std::vector<unsigned int> gate_items;
+        const Vec3 center = gate_node->getCenter();
+        const Vec3 normal = gate_node->getNormal();
+        const Vec3 right = gate_node->getRightUnitVector();
+
+        const float width = std::max(4.0f, gate_node->getPathWidth());
+        const float half_span = std::min(4.2f, width * 0.42f);
+        const int box_count = 5;
+
+        for (int b = 0; b < box_count; b++)
+        {
+            const float t = box_count == 1 ? 0.0f :
+                ((float)b / (float)(box_count - 1)) * 2.0f - 1.0f;
+            Vec3 position = center + right * (t * half_span) + normal * 0.35f;
+
+            Item* item = track->getItemManager()->placeItem(
+                ItemState::ITEM_BONUS_BOX, position, normal);
+            if (item)
+                gate_items.push_back(item->getItemId());
+        }
+
+        m_education_gate_item_ids.push_back(gate_items);
+    }
+}
+
+//-----------------------------------------------------------------------------
+int LinearWorld::findEducationalGiftGate(unsigned int item_id) const
+{
+    for (std::size_t gate = 0; gate < m_education_gate_item_ids.size(); gate++)
+    {
+        const std::vector<unsigned int>& ids = m_education_gate_item_ids[gate];
+        if (std::find(ids.begin(), ids.end(), item_id) != ids.end())
+            return (int)gate;
+    }
+    return -1;
+}
+
+//-----------------------------------------------------------------------------
+bool LinearWorld::isEducationalBonusBox(const ItemState* item) const
+{
+    return m_education_enabled && item &&
+        item->getType() == ItemState::ITEM_BONUS_BOX &&
+        findEducationalGiftGate(item->getItemId()) >= 0;
+}
+
+//-----------------------------------------------------------------------------
+bool LinearWorld::handleEducationalBonusBox(AbstractKart* kart, ItemState* item)
+{
+    if (!isEducationalBonusBox(item) || !kart)
+        return false;
+
+    // Educational gates belong to the local student. AI karts are allowed to
+    // pass through them without making the boxes disappear.
+    if (!kart->getController()->isLocalPlayerController())
+        return true;
+
+    if (m_education_questions.isRaceQuestionSetComplete())
+        return false;
+
+    const int gate = findEducationalGiftGate(item->getItemId());
+    const std::size_t answered = m_education_questions.getAnsweredCount();
+
+    if (gate < 0)
+        return false;
+
+    // A box from an already completed gate behaves like a normal STK box if
+    // the player comes back to it later.
+    if ((std::size_t)gate < answered)
+        return false;
+
+    // If a later gate is reached without collecting the current mandatory
+    // one, use the normal rescue/referee animation and return the kart to a
+    // node just before the missed row of gifts.
+    if ((std::size_t)gate > answered)
+    {
+        if (answered < m_education_rescue_nodes.size() &&
+            !kart->getKartAnimation())
+        {
+            m_education_forced_rescue_node =
+                (int)m_education_rescue_nodes[answered];
+            if (RescueAnimation::create(kart, true) != NULL)
+                m_education_rescue_refresh_pending = true;
+        }
+        return true;
+    }
+
+    if (GUIEngine::ModalDialog::isADialogActive())
+        return true;
+
+    const Education::Question* question =
+        m_education_questions.getCurrentQuestion();
+    if (!question)
+        return true;
+
+    // Hide every box in this row once one of them is collected. This prevents
+    // two boxes in the same gate from immediately opening two questions.
+    ItemManager* item_manager = Track::getCurrentTrack()->getItemManager();
+    if (item_manager && (std::size_t)gate < m_education_gate_item_ids.size())
+    {
+        const std::vector<unsigned int>& ids =
+            m_education_gate_item_ids[(std::size_t)gate];
+        for (unsigned int id : ids)
+        {
+            ItemState* sibling = item_manager->getItem(id);
+            if (sibling && sibling->isAvailable())
+                sibling->collected(kart);
+        }
+    }
+
+    new Education::QuestionDialog(
+        &m_education_questions,
+        kart,
+        *question,
+        answered + 1,
+        Education::QuestionManager::QUESTIONS_PER_RACE);
+
+    return true;
+}
+
+//-----------------------------------------------------------------------------
+/** Educational questions no longer appear because of distance. Distance is
+ *  used only as an anti-skip guard: if the player drives past the next
+ *  mandatory gift row without collecting one, the normal rescue animation
+ *  returns the kart to just before that row.
+ */
+void LinearWorld::updateEducationalQuestions()
+{
+    if (!m_education_enabled ||
+        getPhase() != RACE_PHASE ||
+        GUIEngine::ModalDialog::isADialogActive() ||
+        m_education_questions.isRaceQuestionSetComplete())
+    {
+        return;
+    }
+
+    AbstractKart* player_kart = NULL;
+    for (unsigned int i = 0; i < getNumKarts(); i++)
+    {
+        AbstractKart* kart = m_karts[i].get();
+        if (kart && kart->getController()->isLocalPlayerController())
+        {
+            player_kart = kart;
+            break;
+        }
+    }
+
+    if (!player_kart || player_kart->isEliminated() ||
+        player_kart->hasFinishedRace() || player_kart->getKartAnimation())
+    {
+        return;
+    }
+
+    const std::size_t gate = m_education_questions.getAnsweredCount();
+    if (gate >= m_education_gate_distances.size() ||
+        gate >= m_education_rescue_nodes.size())
+    {
+        return;
+    }
+
+    const unsigned int kart_id = player_kart->getWorldKartId();
+
+    // During a rescue, updateTrackSectors() intentionally skips the kart.
+    // On the frame in which RescueAnimation ends, the cached educational
+    // distance can therefore still describe the position beyond the missed
+    // gate. If we test it immediately, another rescue starts and the referee
+    // appears to never release the player. Refresh the sector once first.
+    if (m_education_rescue_refresh_pending)
+    {
+        TrackSector* sector = getTrackSector(kart_id);
+        if (sector)
+            sector->update(player_kart->getFrontXYZ());
+
+        m_kart_info[kart_id].m_overall_distance =
+            m_kart_info[kart_id].m_finished_laps *
+                Track::getCurrentTrack()->getTrackLength() +
+            getDistanceDownTrackForKart(kart_id, true);
+
+        m_education_rescue_refresh_pending = false;
+        return;
+    }
+    const float current_distance = getOverallDistance(kart_id);
+    const float tolerance =
+        std::max(12.0f, Track::getCurrentTrack()->getTrackLength() * 0.015f);
+
+    if (current_distance > m_education_gate_distances[gate] + tolerance)
+    {
+        m_education_forced_rescue_node =
+            (int)m_education_rescue_nodes[gate];
+        if (RescueAnimation::create(player_kart, true) != NULL)
+            m_education_rescue_refresh_pending = true;
+    }
+}
+
+//-----------------------------------------------------------------------------
 /** General update function called once per frame. This updates the kart
  *  sectors, which are then used to determine the kart positions.
  *  \param ticks Number of physics time steps - should be 1.
@@ -221,6 +546,10 @@ void LinearWorld::update(int ticks)
     // ---------------------------------------------------------------
     WorldWithRank::updateTrack(ticks);
     updateRacePosition();
+
+    // Gift questions are triggered by collisions. This only checks that the
+    // player did not skip the next mandatory gift gate.
+    updateEducationalQuestions();
 
     const unsigned int kart_amount = getNumKarts();
     for (unsigned int i=0; i<kart_amount; i++)
@@ -832,6 +1161,17 @@ unsigned int LinearWorld::getNumberOfRescuePositions() const
 unsigned int LinearWorld::getRescuePositionIndex(AbstractKart *kart)
 {
     const unsigned int kart_id = kart->getWorldKartId();
+
+    // Mandatory educational gift gates can request a one-shot rescue to a
+    // specific driveline node just before the row that was skipped.
+    if (m_education_forced_rescue_node >= 0 &&
+        kart->getController()->isLocalPlayerController())
+    {
+        const unsigned int forced =
+            (unsigned int)m_education_forced_rescue_node;
+        m_education_forced_rescue_node = -1;
+        return forced;
+    }
 
     getTrackSector(kart_id)->rescue();
     // Setting XYZ for the kart is important since otherwise the kart

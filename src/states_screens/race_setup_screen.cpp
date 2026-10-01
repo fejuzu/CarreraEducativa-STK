@@ -82,99 +82,21 @@ void RaceSetupScreen::init()
     assert( w2 != NULL );
     w2->clearItems();
 
-    // ---- Add game modes
-    irr::core::stringw name1 = irr::core::stringw(
+    // IGH EDUCATIVO uses only the standard race mode.
+    // Keep the game-mode screen intentionally limited to one option while
+    // the educational experience is under development.
+    irr::core::stringw normal_name = irr::core::stringw(
         RaceManager::getNameOf(RaceManager::MINOR_MODE_NORMAL_RACE)) + L"\n";
-    //FIXME: avoid duplicating descriptions from the help menu!
-    name1 +=  _("All blows allowed, so catch weapons and make clever use of them!");
+    normal_name += _("Educational race with questions and power-ups.");
 
-    w2->addItem( name1, IDENT_STD, RaceManager::getIconOf(RaceManager::MINOR_MODE_NORMAL_RACE));
+    w2->addItem(normal_name, IDENT_STD,
+        RaceManager::getIconOf(RaceManager::MINOR_MODE_NORMAL_RACE));
 
-    irr::core::stringw name2 = irr::core::stringw(
-        RaceManager::getNameOf(RaceManager::MINOR_MODE_TIME_TRIAL)) + L"\n";
-    //FIXME: avoid duplicating descriptions from the help menu!
-    name2 += _("Contains no powerups, so only your driving skills matter!");
-    w2->addItem( name2, IDENT_TTRIAL, RaceManager::getIconOf(RaceManager::MINOR_MODE_TIME_TRIAL));
-
-    if (PlayerManager::getCurrentPlayer()->isLocked(IDENT_FTL))
-    {
-        w2->addItem( _("Locked : solve active challenges to gain access to more!"),
-            "locked", RaceManager::getIconOf(RaceManager::MINOR_MODE_FOLLOW_LEADER), true);
-    }
-    else
-    {
-        irr::core::stringw name3 = irr::core::stringw(
-            RaceManager::getNameOf(RaceManager::MINOR_MODE_FOLLOW_LEADER)) + L"\n";
-        //I18N: short definition for follow-the-leader game mode
-        name3 += _("Keep up with the leader kart but don't overtake it!");
-        w2->addItem(name3, IDENT_FTL, RaceManager::getIconOf(RaceManager::MINOR_MODE_FOLLOW_LEADER), false);
-    }
-
-    irr::core::stringw name4 = irr::core::stringw(_("Battle")) + L"\n";
-    //FIXME: avoid duplicating descriptions from the help menu!
-    name4 += _("Hit others with weapons until they lose all their lives.");
-    w2->addItem( name4, IDENT_STRIKES, RaceManager::getIconOf(RaceManager::MINOR_MODE_FREE_FOR_ALL));
-
-    irr::core::stringw name5 = irr::core::stringw(
-        RaceManager::getNameOf(RaceManager::MINOR_MODE_SOCCER)) + L"\n";
-    name5 += _("Push the ball into the opposite cage to score goals.");
-    w2->addItem( name5, IDENT_SOCCER, RaceManager::getIconOf(RaceManager::MINOR_MODE_SOCCER));
-
-#define ENABLE_EASTER_EGG_MODE
-#ifdef ENABLE_EASTER_EGG_MODE
-    if(RaceManager::get()->getNumLocalPlayers() == 1)
-    {
-        irr::core::stringw name1 = irr::core::stringw(
-            RaceManager::getNameOf(RaceManager::MINOR_MODE_EASTER_EGG)) + L"\n";
-        //FIXME: avoid duplicating descriptions from the help menu!
-        name1 +=  _("Explore tracks to find all hidden eggs");
-
-        w2->addItem( name1, IDENT_EASTER,
-            RaceManager::getIconOf(RaceManager::MINOR_MODE_EASTER_EGG));
-    }
-#endif
-
-    irr::core::stringw name6 = irr::core::stringw( _("Ghost replay race")) + L"\n";
-    name6 += _("Race against ghost karts and try to beat them!");
-    w2->addItem( name6, IDENT_GHOST, "/gui/icons/mode_ghost.png");
-
-    // I18N: Lap Trial: Complete as many laps as possible in a given amount of time.
-    irr::core::stringw name7 = irr::core::stringw(_("Lap Trial")) + L"\n";
-    name7 += _("Complete as many laps as possible in a given amount of time.");
-    w2->addItem(name7, IDENT_LAP_TRIAL, RaceManager::getIconOf(RaceManager::MINOR_MODE_LAP_TRIAL));
-
+    RaceManager::get()->setMinorMode(RaceManager::MINOR_MODE_NORMAL_RACE);
+    UserConfigParams::m_game_mode = CONFIG_CODE_NORMAL;
+    w2->setSelection(IDENT_STD, PLAYER_ID_GAME_MASTER, true);
+    w2->setItemCountHint(1);
     w2->updateItemDisplay();
-
-    // restore saved game mode
-    switch (UserConfigParams::m_game_mode)
-    {
-    case CONFIG_CODE_NORMAL :
-        w2->setSelection(IDENT_STD, PLAYER_ID_GAME_MASTER, true);
-        break;
-    case CONFIG_CODE_TIMETRIAL :
-        w2->setSelection(IDENT_TTRIAL, PLAYER_ID_GAME_MASTER, true);
-        break;
-    case CONFIG_CODE_FTL :
-        w2->setSelection(IDENT_FTL, PLAYER_ID_GAME_MASTER, true);
-        break;
-    case CONFIG_CODE_3STRIKES :
-        w2->setSelection(IDENT_STRIKES, PLAYER_ID_GAME_MASTER, true);
-        break;
-    case CONFIG_CODE_EASTER :
-        w2->setSelection(IDENT_EASTER, PLAYER_ID_GAME_MASTER, true);
-        break;
-    case CONFIG_CODE_SOCCER :
-        w2->setSelection(IDENT_SOCCER, PLAYER_ID_GAME_MASTER, true);
-        break;
-    case CONFIG_CODE_GHOST :
-        w2->setSelection(IDENT_GHOST, PLAYER_ID_GAME_MASTER, true);
-        break;
-    case CONFIG_CODE_LAP_TRIAL:
-        w2->setSelection(IDENT_LAP_TRIAL, PLAYER_ID_GAME_MASTER, true);
-        break;
-    }
-
-    w2->setItemCountHint(8);
 
     {
         RibbonWidget* w = getWidget<RibbonWidget>("difficulty");
@@ -216,57 +138,6 @@ void RaceSetupScreen::eventCallback(Widget* widget, const std::string& name,
             RaceManager::get()->setMinorMode(RaceManager::MINOR_MODE_NORMAL_RACE);
             UserConfigParams::m_game_mode = CONFIG_CODE_NORMAL;
             TracksAndGPScreen::getInstance()->push();
-        }
-        else if (selectedMode == IDENT_TTRIAL)
-        {
-            RaceManager::get()->setMinorMode(RaceManager::MINOR_MODE_TIME_TRIAL);
-            UserConfigParams::m_game_mode = CONFIG_CODE_TIMETRIAL;
-            TracksAndGPScreen::getInstance()->push();
-        }
-        else if (selectedMode == IDENT_FTL)
-        {
-            // Make sure there are at least three karts, otherwise FTL doesn't
-            if(RaceManager::get()->getNumberOfKarts()<3)
-                RaceManager::get()->setNumKarts(3);
-
-            RaceManager::get()->setMinorMode(RaceManager::MINOR_MODE_FOLLOW_LEADER);
-            UserConfigParams::m_game_mode = CONFIG_CODE_FTL;
-            TracksAndGPScreen::getInstance()->push();
-        }
-        else if (selectedMode == IDENT_STRIKES)
-        {
-            RaceManager::get()->setMinorMode(RaceManager::MINOR_MODE_3_STRIKES);
-            UserConfigParams::m_game_mode = CONFIG_CODE_3STRIKES;
-            ArenasScreen::getInstance()->push();
-        }
-        else if (selectedMode == IDENT_EASTER)
-        {
-            RaceManager::get()->setMinorMode(RaceManager::MINOR_MODE_EASTER_EGG);
-            UserConfigParams::m_game_mode = CONFIG_CODE_EASTER;
-            RaceManager::get()->setNumKarts( RaceManager::get()->getNumLocalPlayers() ); // no AI karts;
-            EasterEggScreen::getInstance()->push();
-        }
-        else if (selectedMode == IDENT_SOCCER)
-        {
-            RaceManager::get()->setMinorMode(RaceManager::MINOR_MODE_SOCCER);
-            UserConfigParams::m_game_mode = CONFIG_CODE_SOCCER;
-            SoccerSetupScreen::getInstance()->push();
-        }
-        else if (selectedMode == IDENT_GHOST)
-        {
-            RaceManager::get()->setMinorMode(RaceManager::MINOR_MODE_TIME_TRIAL);
-            UserConfigParams::m_game_mode = CONFIG_CODE_GHOST;
-            GhostReplaySelection::getInstance()->push();
-        }
-        else if (selectedMode == IDENT_LAP_TRIAL)
-        {
-            RaceManager::get()->setMinorMode(RaceManager::MINOR_MODE_LAP_TRIAL);
-            UserConfigParams::m_game_mode = CONFIG_CODE_LAP_TRIAL;
-            TracksAndGPScreen::getInstance()->push();
-        }
-        else if (selectedMode == "locked")
-        {
-            unlock_manager->playLockSound();
         }
     }
     else if (name == "back")
