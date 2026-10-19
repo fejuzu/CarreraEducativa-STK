@@ -1,0 +1,52 @@
+package com.example.igh_flutter_demo
+
+import android.content.Intent
+import io.flutter.embedding.android.FlutterActivity
+import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.MethodChannel
+
+class MainActivity : FlutterActivity() {
+    private val channelName = "igh.educativo/game"
+    private val gameActivity =
+        "com.ighgroup.educativo.demo.SuperTuxKartActivity"
+
+    override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
+        super.configureFlutterEngine(flutterEngine)
+
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            channelName
+        ).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "openGame" -> {
+                    try {
+                        val intent = Intent().apply {
+                            setClassName(this@MainActivity, gameActivity)
+
+                            call.argument<Int>("userId")?.let {
+                                putExtra("user_id", it)
+                            }
+                            call.argument<Int>("topicId")?.let {
+                                putExtra("topic_id", it)
+                            }
+                            call.argument<Int>("attemptId")?.let {
+                                putExtra("attempt_id", it)
+                            }
+                        }
+
+                        startActivity(intent)
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.error(
+                            "GAME_OPEN_FAILED",
+                            e.message,
+                            null
+                        )
+                    }
+                }
+
+                else -> result.notImplemented()
+            }
+        }
+    }
+}
