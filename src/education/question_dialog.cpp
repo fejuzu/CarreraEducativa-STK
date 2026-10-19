@@ -160,6 +160,7 @@ void QuestionDialog::answer(std::size_t option_index)
 
     AnswerResult result;
     std::string explanation = m_question.explanation;
+    bool used_offline_validation = false;
 
     if (m_question.server_validated)
     {
@@ -198,13 +199,7 @@ void QuestionDialog::answer(std::size_t option_index)
                 elapsed_ms);
 
             explanation = m_question.explanation;
-            if (local_correct)
-                explanation = "Modo sin conexión: respuesta validada localmente.";
-            else if (explanation.empty())
-                explanation = "Modo sin conexión: respuesta validada localmente.";
-            else
-                explanation +=
-                    "\nModo sin conexión: respuesta validada localmente.";
+            used_offline_validation = true;
         }
         else
         {
@@ -239,6 +234,9 @@ void QuestionDialog::answer(std::size_t option_index)
         if (!explanation.empty())
             feedback += "\n" + explanation;
     }
+
+    if (used_offline_validation)
+        feedback += "\nModo sin conexión: respuesta validada localmente.";
 
     LabelWidget* feedback_widget = getWidget<LabelWidget>("feedback");
     feedback_widget->setText(StringUtils::utf8ToWide(feedback), false);
