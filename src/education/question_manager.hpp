@@ -34,8 +34,16 @@ struct Question
     std::string subtopic;
     std::string prompt;
     std::vector<std::string> options;
+
+    // Database option ids are populated only for API questions.
+    std::vector<int> option_ids;
+
+    // Built-in demo questions can still be validated locally as fallback.
     std::size_t correct_index;
     std::string explanation;
+
+    // True when the correct answer must be validated by the PHP/MySQL API.
+    bool server_validated;
 
     Question();
 };
@@ -81,12 +89,20 @@ public:
     const Question* getCurrentQuestion() const;
 
     /**
-     * Stores one answer and advances to the next mandatory question.
-     * The answer is rejected if there is no active question or the option
-     * index is invalid.
+     * Stores one locally validated answer and advances to the next mandatory
+     * question. Used only by the built-in demo bank fallback.
      */
     AnswerResult submitAnswer(std::size_t selected_index,
                               std::uint32_t response_time_ms);
+
+    /**
+     * Stores an answer whose correctness has already been validated by the
+     * PHP/MySQL API.
+     */
+    AnswerResult submitValidatedAnswer(std::size_t selected_index,
+                                       bool correct,
+                                       std::size_t correct_index,
+                                       std::uint32_t response_time_ms);
 
     bool isRaceQuestionSetComplete() const;
     std::size_t getAnsweredCount() const;
