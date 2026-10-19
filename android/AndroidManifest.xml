@@ -5,6 +5,7 @@
     <application android:label="@string/app_name"
                  android:icon="@drawable/icon"
                  android:allowBackup="true"
+                 android:usesCleartextTraffic="true"
                  android:appCategory="game"
                  android:banner="@drawable/banner"
                  android:hasCode="true"
