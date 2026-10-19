@@ -23,7 +23,8 @@ Question::Question()
     : id(0),
       level(1),
       type(QuestionType::MULTIPLE_CHOICE),
-      correct_index(0)
+      correct_index(0),
+      server_validated(false)
 {
 }
 
@@ -71,8 +72,21 @@ bool QuestionManager::isQuestionValid(const Question& question) const
     if (question.options.size() < 2)
         return false;
 
-    if (question.correct_index >= question.options.size())
+    if (question.server_validated)
+    {
+        if (question.option_ids.size() != question.options.size())
+            return false;
+
+        for (std::size_t i = 0; i < question.option_ids.size(); i++)
+        {
+            if (question.option_ids[i] <= 0)
+                return false;
+        }
+    }
+    else if (question.correct_index >= question.options.size())
+    {
         return false;
+    }
 
     if (question.type == QuestionType::TRUE_FALSE &&
         question.options.size() != 2)
@@ -130,14 +144,46 @@ AnswerResult QuestionManager::submitAnswer(
     AnswerResult result;
     const Question* question = getCurrentQuestion();
 
-    if (question == NULL || selected_index >= question->options.size())
+    if (question == NULL || question->server_validated ||
+        selected_index >= question->options.size())
+    {
         return result;
+    }
 
     result.accepted = true;
     result.correct = selected_index == question->correct_index;
     result.question_id = question->id;
     result.selected_index = selected_index;
     result.correct_index = question->correct_index;
+    result.response_time_ms = response_time_ms;
+
+    m_results.push_back(result);
+    m_current_index++;
+
+    return result;
+}
+
+AnswerResult QuestionManager::submitValidatedAnswer(
+    std::size_t selected_index,
+    bool correct,
+    std::size_t correct_index,
+    std::uint32_t response_time_ms)
+{
+    AnswerResult result;
+    const Question* question = getCurrentQuestion();
+
+    if (question == NULL || !question->server_validated ||
+        selected_index >= question->options.size() ||
+        correct_index >= question->options.size())
+    {
+        return result;
+    }
+
+    result.accepted = true;
+    result.correct = correct;
+    result.question_id = question->id;
+    result.selected_index = selected_index;
+    result.correct_index = correct_index;
     result.response_time_ms = response_time_ms;
 
     m_results.push_back(result);
