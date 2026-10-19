@@ -18,6 +18,7 @@
 #include "modes/linear_world.hpp"
 
 #include "education/demo_questions.hpp"
+#include "education/api_config.hpp"
 #include "education/question_api.hpp"
 #include "education/question_cache.hpp"
 #include "education/question_dialog.hpp"
@@ -152,8 +153,7 @@ void LinearWorld::reset(bool restart)
         // 2. Always start the race from the local cache.
         // 3. If neither server nor cache is available, keep the built-in demo
         //    bank as the final safety net.
-        const std::string sync_url =
-            "http://127.0.0.1/igh-api/public/api/sync_stk.php";
+        const std::string sync_url = Education::API_SYNC_URL;
 
         std::size_t synced_count = 0;
         std::string sync_error;
@@ -169,7 +169,7 @@ void LinearWorld::reset(bool restart)
                       (unsigned int)synced_count);
 
             const std::string result_sync_url =
-                "http://127.0.0.1/igh-api/public/api/result_sync_stk.php";
+                Education::API_RESULT_SYNC_URL;
             std::size_t synced_results = 0;
             std::size_t remaining_results = 0;
             std::string result_sync_error;
@@ -554,7 +554,7 @@ void LinearWorld::queueEducationalRaceResult(AbstractKart* kart)
         return;
 
     const std::string result_sync_url =
-        "http://127.0.0.1/igh-api/public/api/result_sync_stk.php";
+        Education::API_RESULT_SYNC_URL;
 
     std::size_t synced_results = 0;
     std::size_t remaining_results = 0;
