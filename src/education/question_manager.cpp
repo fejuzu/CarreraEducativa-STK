@@ -24,7 +24,8 @@ Question::Question()
       level(1),
       type(QuestionType::MULTIPLE_CHOICE),
       correct_index(0),
-      server_validated(false)
+      server_validated(false),
+      has_offline_answer_key(false)
 {
 }
 
