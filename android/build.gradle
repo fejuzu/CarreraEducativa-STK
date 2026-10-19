@@ -24,7 +24,17 @@ allprojects
     }
 }
 
-apply plugin: 'com.android.application'
+def buildAsLibrary = project.hasProperty('build_as_library') &&
+    project.getProperty('build_as_library').toString().toBoolean()
+
+if (buildAsLibrary)
+{
+    apply plugin: 'com.android.library'
+}
+else
+{
+    apply plugin: 'com.android.application'
+}
 
 android
 {
@@ -49,8 +59,12 @@ android
 
     defaultConfig
     {
-        versionCode project.getProperty('version_code').toInteger()
-        versionName project.getProperty('version_name')
+        if (!buildAsLibrary)
+        {
+            versionCode project.getProperty('version_code').toInteger()
+            versionName project.getProperty('version_name')
+        }
+        manifestPlaceholders = [stkPackageName: project.getProperty('package_name')]
         minSdkVersion min_sdk_version.toInteger()
         compileSdkVersion compile_sdk_version.toInteger()
         targetSdkVersion target_sdk_version.toInteger()
@@ -78,14 +92,17 @@ android
         }
     }
 
-    signingConfigs
+    if (!buildAsLibrary)
     {
-        release
+        signingConfigs
         {
-            storeFile file(keystore)
-            storePassword storepass
-            keyAlias alias
-            keyPassword storepass
+            release
+            {
+                storeFile file(keystore)
+                storePassword storepass
+                keyAlias alias
+                keyPassword storepass
+            }
         }
     }
 
@@ -130,7 +147,8 @@ android
                     cppFlags '-O3'
                 }
             }
-            signingConfig signingConfigs.release
+            if (!buildAsLibrary)
+                signingConfig signingConfigs.release
             ndk
             {
                 if (project.getProperty('compile_arch') == 'all')
@@ -149,7 +167,7 @@ android
     {
         main
         {
-            manifest.srcFile 'AndroidManifest.xml'
+            manifest.srcFile buildAsLibrary ? 'AndroidManifest-library.xml' : 'AndroidManifest.xml'
             res.srcDirs = ['res']
             assets.srcDirs = ['assets']
             if (project.getProperty('compile_arch') == 'all' ||
