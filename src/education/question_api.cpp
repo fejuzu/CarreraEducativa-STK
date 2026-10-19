@@ -5,6 +5,7 @@
 
 #include "education/question_api.hpp"
 
+#include "education/question_cache.hpp"
 #include "online/http_request.hpp"
 
 #include <cstdlib>
@@ -14,6 +15,7 @@ namespace Education
 {
 namespace
 {
+
 std::vector<std::string> splitEscaped(const std::string& line)
 {
     std::vector<std::string> fields;
@@ -63,20 +65,13 @@ std::vector<std::string> splitEscaped(const std::string& line)
     fields.push_back(current);
     return fields;
 }
-}
 
-bool loadQuestionsFromApi(const std::string& url,
-                          std::vector<Question>* questions,
-                          std::string* error)
+bool getRequestData(const std::string& url,
+                    std::string* data,
+                    std::string* error)
 {
-    if (!questions)
-    {
-        if (error)
-            *error = "Question output pointer is null.";
+    if (!data)
         return false;
-    }
-
-    questions->clear();
 
     Online::HTTPRequest request;
     request.setURL(url);
@@ -90,14 +85,22 @@ bool loadQuestionsFromApi(const std::string& url,
         return false;
     }
 
-    const std::string& data = request.getData();
-    if (data.empty())
+    *data = request.getData();
+
+    if (data->empty())
     {
         if (error)
             *error = "Question API returned an empty response.";
         return false;
     }
 
+    return true;
+}
+
+bool parsePublicQuestionFeed(const std::string& data,
+                             std::vector<Question>* questions,
+                             std::string* error)
+{
     std::istringstream stream(data);
     std::string line;
 
@@ -136,15 +139,7 @@ bool loadQuestionsFromApi(const std::string& url,
 
         if (fields[0] == "Q")
         {
-            if (in_question)
-            {
-                if (error)
-                    *error = "Question API response contains a nested question.";
-                questions->clear();
-                return false;
-            }
-
-            if (fields.size() != 7)
+            if (in_question || fields.size() != 7)
             {
                 if (error)
                     *error = "Question API returned an invalid question row.";
@@ -165,6 +160,7 @@ bool loadQuestionsFromApi(const std::string& url,
             current.options.clear();
             current.option_ids.clear();
             current.server_validated = true;
+            current.has_offline_answer_key = false;
 
             in_question = true;
             continue;
@@ -187,8 +183,10 @@ bool loadQuestionsFromApi(const std::string& url,
 
         if (fields[0] == "E")
         {
-            if (!in_question || current.id <= 0 ||
-                current.prompt.empty() || current.options.size() < 2 ||
+            if (!in_question ||
+                current.id <= 0 ||
+                current.prompt.empty() ||
+                current.options.size() < 2 ||
                 current.option_ids.size() != current.options.size())
             {
                 if (error)
@@ -219,6 +217,168 @@ bool loadQuestionsFromApi(const std::string& url,
         questions->clear();
         return false;
     }
+
+    return true;
+}
+
+bool parseOfflineSyncFeed(const std::string& data,
+                          std::vector<Question>* questions,
+                          std::string* error)
+{
+    std::istringstream stream(data);
+    std::string line;
+
+    if (!std::getline(stream, line))
+    {
+        if (error)
+            *error = "Offline sync response has no header.";
+        return false;
+    }
+
+    if (!line.empty() && line.back() == '\r')
+        line.pop_back();
+
+    const std::vector<std::string> header = splitEscaped(line);
+    if (header.size() < 2 || header[0] != "OK")
+    {
+        if (error)
+            *error = "Offline sync returned an invalid header.";
+        return false;
+    }
+
+    Question current;
+    bool in_question = false;
+    int correct_option_id = 0;
+
+    while (std::getline(stream, line))
+    {
+        if (!line.empty() && line.back() == '\r')
+            line.pop_back();
+
+        if (line.empty())
+            continue;
+
+        const std::vector<std::string> fields = splitEscaped(line);
+        if (fields.empty())
+            continue;
+
+        if (fields[0] == "Q")
+        {
+            if (in_question || fields.size() != 9)
+            {
+                if (error)
+                    *error = "Offline sync returned an invalid question row.";
+                questions->clear();
+                return false;
+            }
+
+            current = Question();
+            current.id = std::atoi(fields[1].c_str());
+            current.level = std::atoi(fields[2].c_str());
+            current.type = fields[3] == "true_false"
+                ? QuestionType::TRUE_FALSE
+                : QuestionType::MULTIPLE_CHOICE;
+            current.topic = fields[4];
+            current.subtopic = fields[5];
+            correct_option_id = std::atoi(fields[6].c_str());
+            current.prompt = fields[7];
+            current.explanation = fields[8];
+            current.options.clear();
+            current.option_ids.clear();
+            current.server_validated = true;
+            current.has_offline_answer_key = true;
+
+            in_question = true;
+            continue;
+        }
+
+        if (fields[0] == "O")
+        {
+            if (!in_question || fields.size() != 4)
+            {
+                if (error)
+                    *error = "Offline sync returned an option outside a question.";
+                questions->clear();
+                return false;
+            }
+
+            const int option_id = std::atoi(fields[1].c_str());
+
+            if (option_id == correct_option_id)
+                current.correct_index = current.options.size();
+
+            current.option_ids.push_back(option_id);
+            current.options.push_back(fields[3]);
+            continue;
+        }
+
+        if (fields[0] == "E")
+        {
+            bool correct_found =
+                current.correct_index < current.option_ids.size() &&
+                current.option_ids[current.correct_index] == correct_option_id;
+
+            if (!in_question ||
+                current.id <= 0 ||
+                current.prompt.empty() ||
+                current.options.size() < 2 ||
+                current.option_ids.size() != current.options.size() ||
+                !correct_found)
+            {
+                if (error)
+                    *error = "Offline sync returned an incomplete question.";
+                questions->clear();
+                return false;
+            }
+
+            if (current.type == QuestionType::TRUE_FALSE &&
+                current.options.size() != 2)
+            {
+                if (error)
+                    *error = "True/false question does not contain exactly two options.";
+                questions->clear();
+                return false;
+            }
+
+            questions->push_back(current);
+            in_question = false;
+            correct_option_id = 0;
+            continue;
+        }
+    }
+
+    if (in_question)
+    {
+        if (error)
+            *error = "Offline sync ended before the question was closed.";
+        questions->clear();
+        return false;
+    }
+
+    return true;
+}
+
+} // anonymous namespace
+
+bool loadQuestionsFromApi(const std::string& url,
+                          std::vector<Question>* questions,
+                          std::string* error)
+{
+    if (!questions)
+    {
+        if (error)
+            *error = "Question output pointer is null.";
+        return false;
+    }
+
+    questions->clear();
+
+    std::string data;
+    if (!getRequestData(url, &data, error))
+        return false;
+
+    if (!parsePublicQuestionFeed(data, questions, error))
+        return false;
 
     if (questions->size() < QuestionManager::QUESTIONS_PER_RACE)
     {
@@ -300,6 +460,37 @@ bool validateAnswerWithApi(const std::string& url,
     validation->correct = fields[1] == "1";
     validation->correct_index = correct_index;
     validation->explanation = fields[3];
+
+    return true;
+}
+
+bool syncQuestionsToOfflineCache(const std::string& url,
+                                 std::size_t* synced_count,
+                                 std::string* error)
+{
+    if (synced_count)
+        *synced_count = 0;
+
+    std::string data;
+    if (!getRequestData(url, &data, error))
+        return false;
+
+    std::vector<Question> questions;
+    if (!parseOfflineSyncFeed(data, &questions, error))
+        return false;
+
+    if (questions.size() < QuestionManager::QUESTIONS_PER_RACE)
+    {
+        if (error)
+            *error = "Offline sync returned fewer than 10 valid questions.";
+        return false;
+    }
+
+    if (!saveOfflineQuestionCache(questions, error))
+        return false;
+
+    if (synced_count)
+        *synced_count = questions.size();
 
     return true;
 }
