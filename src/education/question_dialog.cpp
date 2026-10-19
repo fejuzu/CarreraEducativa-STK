@@ -4,6 +4,7 @@
 //
 
 #include "education/question_dialog.hpp"
+#include "education/api_config.hpp"
 #include "education/question_api.hpp"
 
 #include "guiengine/widgets/button_widget.hpp"
@@ -166,8 +167,7 @@ void QuestionDialog::answer(std::size_t option_index)
     {
         AnswerValidation validation;
         std::string validation_error;
-        const std::string answer_url =
-            "http://127.0.0.1/igh-api/public/api/answer_stk.php";
+        const std::string answer_url = Education::API_ANSWER_URL;
 
         if (validateAnswerWithApi(
                 answer_url,
