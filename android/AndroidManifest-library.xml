@@ -7,7 +7,7 @@
       application is the only installed launcher app, while this activity
       opens the native IGH EDUCATIVO game inside the same APK.
     -->
-    <application>
+    <application android:usesCleartextTraffic="true">
         <activity
             android:name="${stkPackageName}.SuperTuxKartActivity"
             android:label="@string/app_name"
