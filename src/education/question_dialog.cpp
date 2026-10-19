@@ -4,6 +4,7 @@
 //
 
 #include "education/question_dialog.hpp"
+#include "education/question_api.hpp"
 
 #include "guiengine/widgets/button_widget.hpp"
 #include "guiengine/widgets/label_widget.hpp"
@@ -157,8 +158,45 @@ void QuestionDialog::answer(std::size_t option_index)
         std::chrono::duration_cast<std::chrono::milliseconds>(
             now - m_opened_at).count());
 
-    const AnswerResult result =
-        m_manager->submitAnswer(option_index, elapsed_ms);
+    AnswerResult result;
+    std::string explanation = m_question.explanation;
+
+    if (m_question.server_validated)
+    {
+        AnswerValidation validation;
+        std::string validation_error;
+        const std::string answer_url =
+            "http://127.0.0.1/igh-api/public/api/answer_stk.php";
+
+        if (!validateAnswerWithApi(
+                answer_url,
+                m_question,
+                option_index,
+                &validation,
+                &validation_error))
+        {
+            LabelWidget* feedback_widget =
+                getWidget<LabelWidget>("feedback");
+            feedback_widget->setText(
+                StringUtils::utf8ToWide(
+                    "No se pudo validar la respuesta con el servidor. "
+                    "Intenta nuevamente.\n" + validation_error),
+                false);
+            feedback_widget->setVisible(true);
+            return;
+        }
+
+        result = m_manager->submitValidatedAnswer(
+            option_index,
+            validation.correct,
+            validation.correct_index,
+            elapsed_ms);
+        explanation = validation.explanation;
+    }
+    else
+    {
+        result = m_manager->submitAnswer(option_index, elapsed_ms);
+    }
 
     if (!result.accepted)
         return;
@@ -171,8 +209,8 @@ void QuestionDialog::answer(std::size_t option_index)
     else
     {
         feedback = "INCORRECTO.  " + applyPenalty();
-        if (!m_question.explanation.empty())
-            feedback += "\n" + m_question.explanation;
+        if (!explanation.empty())
+            feedback += "\n" + explanation;
     }
 
     LabelWidget* feedback_widget = getWidget<LabelWidget>("feedback");
