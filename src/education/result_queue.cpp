@@ -6,6 +6,7 @@
 #include "education/result_queue.hpp"
 
 #include "education/question_cache.hpp"
+#include "io/file_manager.hpp"
 #include "online/http_request.hpp"
 
 #ifdef ENABLE_SQLITE3
@@ -14,6 +15,7 @@
 
 #include <chrono>
 #include <cstdlib>
+#include <fstream>
 #include <iomanip>
 #include <random>
 #include <sstream>
@@ -359,6 +361,293 @@ std::string buildAnswersPayload(const PendingResult& result)
 } // anonymous namespace
 #endif
 
+#ifndef ENABLE_SQLITE3
+namespace
+{
+
+struct FilePendingAnswer
+{
+    int question_id;
+    int option_order;
+    std::uint32_t response_time_ms;
+};
+
+struct FilePendingResult
+{
+    std::string id;
+    std::string employee_code;
+    int race_position;
+    std::uint64_t race_time_ms;
+    std::vector<FilePendingAnswer> answers;
+};
+
+std::string fileResultQueuePath()
+{
+    return file_manager->getUserConfigFile("igh_educativo_results.queue");
+}
+
+std::string fileEscape(const std::string& value)
+{
+    std::string out;
+    out.reserve(value.size());
+
+    for (std::size_t i = 0; i < value.size(); i++)
+    {
+        switch (value[i])
+        {
+            case '\\': out += "\\\\"; break;
+            case '|': out += "\\|"; break;
+            case '\n': out += "\\n"; break;
+            case '\r': out += "\\r"; break;
+            default: out += value[i]; break;
+        }
+    }
+
+    return out;
+}
+
+std::vector<std::string> fileSplit(const std::string& line)
+{
+    std::vector<std::string> fields;
+    std::string current;
+    bool escaped = false;
+
+    for (std::size_t i = 0; i < line.size(); i++)
+    {
+        const char ch = line[i];
+
+        if (escaped)
+        {
+            switch (ch)
+            {
+                case 'n': current += '\n'; break;
+                case 'r': current += '\r'; break;
+                case '|': current += '|'; break;
+                case '\\': current += '\\'; break;
+                default:
+                    current += '\\';
+                    current += ch;
+                    break;
+            }
+            escaped = false;
+            continue;
+        }
+
+        if (ch == '\\')
+        {
+            escaped = true;
+            continue;
+        }
+
+        if (ch == '|')
+        {
+            fields.push_back(current);
+            current.clear();
+            continue;
+        }
+
+        current += ch;
+    }
+
+    if (escaped)
+        current += '\\';
+
+    fields.push_back(current);
+    return fields;
+}
+
+std::string fileMakeResultId()
+{
+    const std::uint64_t now =
+        static_cast<std::uint64_t>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count());
+
+    std::random_device rd;
+    const unsigned int random_value = rd();
+
+    std::ostringstream out;
+    out << "race_" << now << "_"
+        << std::hex << std::setw(8) << std::setfill('0') << random_value;
+    return out.str();
+}
+
+bool loadFilePendingResults(std::vector<FilePendingResult>* pending,
+                            std::string* error)
+{
+    if (!pending)
+        return false;
+
+    pending->clear();
+
+    std::ifstream in(fileResultQueuePath().c_str(), std::ios::binary);
+
+    if (!in)
+        return true;
+
+    std::string line;
+    if (!std::getline(in, line))
+        return true;
+
+    if (!line.empty() && line.back() == '\r')
+        line.pop_back();
+
+    const std::vector<std::string> header = fileSplit(line);
+    if (header.size() != 2 ||
+        header[0] != "IGH_EDU_RESULTS" ||
+        header[1] != "1")
+    {
+        if (error)
+            *error = "Portable result queue has an invalid header.";
+        return false;
+    }
+
+    FilePendingResult current;
+    bool in_result = false;
+
+    while (std::getline(in, line))
+    {
+        if (!line.empty() && line.back() == '\r')
+            line.pop_back();
+
+        if (line.empty())
+            continue;
+
+        const std::vector<std::string> fields = fileSplit(line);
+        if (fields.empty())
+            continue;
+
+        if (fields[0] == "R")
+        {
+            if (in_result || fields.size() != 5)
+            {
+                if (error)
+                    *error = "Portable result queue has an invalid result row.";
+                return false;
+            }
+
+            current = FilePendingResult();
+            current.id = fields[1];
+            current.employee_code = fields[2];
+            current.race_position = std::atoi(fields[3].c_str());
+            current.race_time_ms =
+                static_cast<std::uint64_t>(
+                    std::strtoull(fields[4].c_str(), NULL, 10));
+            in_result = true;
+            continue;
+        }
+
+        if (fields[0] == "A")
+        {
+            if (!in_result || fields.size() != 4)
+            {
+                if (error)
+                    *error = "Portable result queue has an invalid answer row.";
+                return false;
+            }
+
+            FilePendingAnswer answer;
+            answer.question_id = std::atoi(fields[1].c_str());
+            answer.option_order = std::atoi(fields[2].c_str());
+            answer.response_time_ms =
+                static_cast<std::uint32_t>(
+                    std::strtoul(fields[3].c_str(), NULL, 10));
+            current.answers.push_back(answer);
+            continue;
+        }
+
+        if (fields[0] == "E")
+        {
+            if (!in_result || current.id.empty() ||
+                current.employee_code.empty() || current.answers.empty())
+            {
+                if (error)
+                    *error = "Portable result queue contains incomplete data.";
+                return false;
+            }
+
+            pending->push_back(current);
+            in_result = false;
+        }
+    }
+
+    if (in_result)
+    {
+        if (error)
+            *error = "Portable result queue ended before closing a result.";
+        return false;
+    }
+
+    return true;
+}
+
+bool writeFilePendingResults(const std::vector<FilePendingResult>& pending,
+                             std::string* error)
+{
+    std::ofstream out(
+        fileResultQueuePath().c_str(),
+        std::ios::binary | std::ios::trunc);
+
+    if (!out)
+    {
+        if (error)
+            *error = "Cannot write portable result queue.";
+        return false;
+    }
+
+    out << "IGH_EDU_RESULTS|1\n";
+
+    for (std::size_t i = 0; i < pending.size(); i++)
+    {
+        const FilePendingResult& item = pending[i];
+
+        out << "R|"
+            << fileEscape(item.id) << "|"
+            << fileEscape(item.employee_code) << "|"
+            << item.race_position << "|"
+            << item.race_time_ms << "\n";
+
+        for (std::size_t a = 0; a < item.answers.size(); a++)
+        {
+            out << "A|"
+                << item.answers[a].question_id << "|"
+                << item.answers[a].option_order << "|"
+                << item.answers[a].response_time_ms << "\n";
+        }
+
+        out << "E\n";
+    }
+
+    if (!out.good())
+    {
+        if (error)
+            *error = "Could not finish writing portable result queue.";
+        return false;
+    }
+
+    return true;
+}
+
+std::string buildFileAnswersPayload(const FilePendingResult& result)
+{
+    std::ostringstream out;
+
+    for (std::size_t i = 0; i < result.answers.size(); i++)
+    {
+        if (i > 0)
+            out << "|";
+
+        out << result.answers[i].question_id << ","
+            << result.answers[i].option_order << ","
+            << result.answers[i].response_time_ms;
+    }
+
+    return out.str();
+}
+
+} // anonymous namespace
+#endif
+
 bool queueOfflineRaceResult(const QuestionManager& manager,
                             int race_position,
                             std::uint64_t race_time_ms,
@@ -367,9 +656,51 @@ bool queueOfflineRaceResult(const QuestionManager& manager,
                             std::string* error)
 {
 #ifndef ENABLE_SQLITE3
-    if (error)
-        *error = "SQLite support is not enabled in this build.";
-    return false;
+    const std::vector<AnswerResult>& results = manager.getResults();
+    const std::vector<Question>& questions = manager.getRaceQuestions();
+
+    if (results.empty() || results.size() != questions.size())
+    {
+        if (error)
+            *error = "Educational race results are incomplete.";
+        return false;
+    }
+
+    if (employee_code.empty())
+    {
+        if (error)
+            *error = "Employee code is empty.";
+        return false;
+    }
+
+    std::vector<FilePendingResult> pending;
+    if (!loadFilePendingResults(&pending, error))
+        return false;
+
+    FilePendingResult item;
+    item.id = fileMakeResultId();
+    item.employee_code = employee_code;
+    item.race_position = race_position;
+    item.race_time_ms = race_time_ms;
+
+    for (std::size_t i = 0; i < results.size(); i++)
+    {
+        FilePendingAnswer answer;
+        answer.question_id = results[i].question_id;
+        answer.option_order = static_cast<int>(results[i].selected_index);
+        answer.response_time_ms = results[i].response_time_ms;
+        item.answers.push_back(answer);
+    }
+
+    pending.push_back(item);
+
+    if (!writeFilePendingResults(pending, error))
+        return false;
+
+    if (result_id)
+        *result_id = item.id;
+
+    return true;
 #else
     const std::vector<AnswerResult>& results = manager.getResults();
     const std::vector<Question>& questions = manager.getRaceQuestions();
@@ -521,9 +852,15 @@ bool getPendingRaceResultCount(std::size_t* count,
                                std::string* error)
 {
 #ifndef ENABLE_SQLITE3
-    if (error)
-        *error = "SQLite support is not enabled in this build.";
-    return false;
+    if (!count)
+        return false;
+
+    std::vector<FilePendingResult> pending;
+    if (!loadFilePendingResults(&pending, error))
+        return false;
+
+    *count = pending.size();
+    return true;
 #else
     if (!count)
         return false;
@@ -573,9 +910,85 @@ bool syncPendingRaceResults(const std::string& url,
                             std::string* error)
 {
 #ifndef ENABLE_SQLITE3
-    if (error)
-        *error = "SQLite support is not enabled in this build.";
-    return false;
+    if (synced_count)
+        *synced_count = 0;
+    if (remaining_count)
+        *remaining_count = 0;
+
+    std::vector<FilePendingResult> pending;
+    if (!loadFilePendingResults(&pending, error))
+        return false;
+
+    std::vector<FilePendingResult> remaining;
+    std::size_t synced = 0;
+    std::string last_error;
+
+    for (std::size_t i = 0; i < pending.size(); i++)
+    {
+        const FilePendingResult& item = pending[i];
+
+        Online::HTTPRequest request;
+        request.setURL(url);
+        request.addParameter("client_result_id", item.id);
+        request.addParameter("employee_code", item.employee_code);
+        request.addParameter("race_position", item.race_position);
+        request.addParameter(
+            "race_time_ms",
+            static_cast<unsigned long long>(item.race_time_ms));
+        request.addParameter("answers", buildFileAnswersPayload(item));
+        request.executeNow();
+
+        if (request.hadDownloadError())
+        {
+            last_error = request.getDownloadErrorMessage();
+
+            for (std::size_t keep = i; keep < pending.size(); keep++)
+                remaining.push_back(pending[keep]);
+            break;
+        }
+
+        std::string response = request.getData();
+        const std::size_t newline = response.find_first_of("\r\n");
+        if (newline != std::string::npos)
+            response.erase(newline);
+
+        const std::vector<std::string> fields = fileSplit(response);
+
+        if (fields.size() >= 2 && fields[0] == "OK")
+        {
+            synced++;
+        }
+        else
+        {
+            last_error = response.empty()
+                ? "Result sync endpoint returned an empty response."
+                : response;
+
+            for (std::size_t keep = i; keep < pending.size(); keep++)
+                remaining.push_back(pending[keep]);
+            break;
+        }
+    }
+
+    if (last_error.empty())
+        remaining.clear();
+
+    if (!writeFilePendingResults(remaining, error))
+        return false;
+
+    if (synced_count)
+        *synced_count = synced;
+    if (remaining_count)
+        *remaining_count = remaining.size();
+
+    if (!last_error.empty())
+    {
+        if (error)
+            *error = last_error;
+        return false;
+    }
+
+    return true;
 #else
     if (synced_count)
         *synced_count = 0;
