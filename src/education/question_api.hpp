@@ -28,8 +28,8 @@ namespace Education
     };
 
     /**
-     * Downloads questions from the IGH EDUCATIVO PHP/MySQL API.
-     * Correct answers are intentionally not included in this feed.
+     * Downloads race questions from the IGH EDUCATIVO API without exposing
+     * the correct answer.
      */
     bool loadQuestionsFromApi(const std::string& url,
                               std::vector<Question>* questions,
@@ -44,6 +44,14 @@ namespace Education
                                std::size_t selected_index,
                                AnswerValidation* validation,
                                std::string* error);
+
+    /**
+     * Downloads the complete offline-ready bank, including the answer key,
+     * and atomically replaces the local SQLite cache.
+     */
+    bool syncQuestionsToOfflineCache(const std::string& url,
+                                     std::size_t* synced_count,
+                                     std::string* error);
 }
 
 #endif
