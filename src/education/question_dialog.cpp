@@ -218,6 +218,8 @@ void QuestionDialog::answer(std::size_t option_index)
     else
     {
         result = m_manager->submitAnswer(option_index, elapsed_ms);
+        if (m_question.has_offline_answer_key)
+            used_offline_validation = true;
     }
 
     if (!result.accepted)
