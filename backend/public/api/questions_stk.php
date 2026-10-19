@@ -22,16 +22,8 @@ $sql = '
         q.level,
         q.question_type,
         q.prompt,
-        q.explanation,
         t.name AS topic,
-        COALESCE(s.name, "") AS subtopic,
-        (
-            SELECT qo.option_order
-            FROM question_options qo
-            WHERE qo.question_id = q.id
-              AND qo.is_correct = 1
-            LIMIT 1
-        ) AS correct_order
+        COALESCE(s.name, "") AS subtopic
     FROM questions q
     INNER JOIN topics t ON t.id = q.topic_id
     LEFT JOIN subtopics s ON s.id = q.subtopic_id
@@ -72,9 +64,7 @@ foreach ($questions as $question) {
         stkEscape((string)$question['question_type']),
         stkEscape((string)$question['topic']),
         stkEscape((string)$question['subtopic']),
-        (string)$question['correct_order'],
         stkEscape((string)$question['prompt']),
-        stkEscape((string)($question['explanation'] ?? '')),
     ]) . "\n";
 
     $optionStmt->execute([
