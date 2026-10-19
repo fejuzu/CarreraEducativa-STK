@@ -42,8 +42,12 @@ struct Question
     std::size_t correct_index;
     std::string explanation;
 
-    // True when the correct answer must be validated by the PHP/MySQL API.
+    // True when the correct answer should be validated by the PHP/MySQL API.
     bool server_validated;
+
+    // True when this question also carries a local cached answer key, allowing
+    // the race to continue when the API is temporarily unreachable.
+    bool has_offline_answer_key;
 
     Question();
 };
