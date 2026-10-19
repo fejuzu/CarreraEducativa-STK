@@ -27,6 +27,12 @@ if [ -z "$STK_NDK_VERSION" ]; then
     export STK_NDK_VERSION="28.1.13356709"
 fi
 
+# BUILD_AS_LIBRARY=1 builds an AAR that can be embedded in a Flutter Android
+# application. The default remains the original standalone APK build.
+if [ -z "$BUILD_AS_LIBRARY" ]; then
+    export BUILD_AS_LIBRARY=0
+fi
+
 export APP_NAME_RELEASE="IGH EDUCATIVO"
 export PACKAGE_NAME_RELEASE="com.ighgroup.educativo"
 export PACKAGE_CLASS_NAME_RELEASE="com/ighgroup/educativo"
@@ -157,7 +163,7 @@ if [ ! -d "$SDK_PATH" ]; then
 fi
 
 # Check if we have key for signing in release build
-if [ "$GRADLE_BUILD_TYPE" = "assembleRelease" ]; then
+if [ "$GRADLE_BUILD_TYPE" = "assembleRelease" ] && [ "$BUILD_AS_LIBRARY" != "1" ]; then
     if [ -z "$STK_KEYSTORE" ]; then
         echo "Error: STK_KEYSTORE variable is empty."
         exit
@@ -453,9 +459,10 @@ export ANDROID_HOME="$SDK_PATH"
           -Ppackage_name="$PACKAGE_NAME"                 \
           -Pversion_name="$PROJECT_VERSION"              \
           -Pversion_code="$PROJECT_CODE"                 \
+          -Pbuild_as_library="$BUILD_AS_LIBRARY"         \
           $GRADLE_BUILD_TYPE
 
-if [ "$GRADLE_BUILD_TYPE" = "assembleRelease" ]; then
+if [ "$GRADLE_BUILD_TYPE" = "assembleRelease" ] && [ "$BUILD_AS_LIBRARY" != "1" ]; then
 ./gradlew -Pcompile_sdk_version="$COMPILE_SDK_VERSION"   \
           -Pmin_sdk_version="$STK_MIN_ANDROID_SDK"       \
           -Pcompile_sdk_version="$STK_TARGET_ANDROID_SDK"\
@@ -469,6 +476,7 @@ if [ "$GRADLE_BUILD_TYPE" = "assembleRelease" ]; then
           -Ppackage_name="$PACKAGE_NAME"                 \
           -Pversion_name="$PROJECT_VERSION"              \
           -Pversion_code="$PROJECT_CODE"                 \
+          -Pbuild_as_library="$BUILD_AS_LIBRARY"         \
           "bundleRelease"
 fi
 
