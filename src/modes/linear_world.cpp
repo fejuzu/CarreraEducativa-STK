@@ -19,6 +19,7 @@
 
 #include "education/demo_questions.hpp"
 #include "education/question_api.hpp"
+#include "education/question_cache.hpp"
 #include "education/question_dialog.hpp"
 
 #include "achievements/achievements_manager.hpp"
@@ -141,28 +142,48 @@ void LinearWorld::reset(bool restart)
          RaceManager::get()->getMinorMode() ==
              RaceManager::MINOR_MODE_TIME_TRIAL))
     {
-        std::vector<Education::Question> api_questions;
-        std::string api_error;
-        const std::string api_url =
-            "http://127.0.0.1/igh-api/public/api/questions_stk.php?limit=10";
+        // Hybrid online/offline flow:
+        // 1. Try to refresh the local SQLite bank from PHP/MySQL.
+        // 2. Always start the race from the local cache.
+        // 3. If neither server nor cache is available, keep the built-in demo
+        //    bank as the final safety net.
+        const std::string sync_url =
+            "http://127.0.0.1/igh-api/public/api/sync_stk.php";
 
-        if (Education::loadQuestionsFromApi(
-                api_url, &api_questions, &api_error))
+        std::size_t synced_count = 0;
+        std::string sync_error;
+
+        if (Education::syncQuestionsToOfflineCache(
+                sync_url, &synced_count, &sync_error))
         {
-            m_education_questions.setQuestionBank(api_questions);
             Log::info("Education",
-                      "Loaded %u questions from MySQL API.",
-                      (unsigned int)api_questions.size());
+                      "Offline cache synchronized with %u MySQL questions.",
+                      (unsigned int)synced_count);
         }
         else
         {
-            // Keep the existing demo bank as a safety net while the local API
-            // integration is being tested. This prevents a temporary XAMPP
-            // outage from disabling educational races completely.
             Log::warn("Education",
-                      "Could not load MySQL questions: %s. "
+                      "Could not refresh offline cache: %s",
+                      sync_error.c_str());
+        }
+
+        std::vector<Education::Question> cached_questions;
+        std::string cache_error;
+
+        if (Education::loadOfflineQuestionCache(
+                &cached_questions, &cache_error))
+        {
+            m_education_questions.setQuestionBank(cached_questions);
+            Log::info("Education",
+                      "Loaded %u questions from local SQLite cache.",
+                      (unsigned int)cached_questions.size());
+        }
+        else
+        {
+            Log::warn("Education",
+                      "Offline cache unavailable: %s. "
                       "Using built-in demo bank.",
-                      api_error.c_str());
+                      cache_error.c_str());
             m_education_questions.setQuestionBank(
                 Education::createDemoQuestionBank());
         }
