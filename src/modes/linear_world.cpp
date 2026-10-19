@@ -21,6 +21,7 @@
 #include "education/question_api.hpp"
 #include "education/question_cache.hpp"
 #include "education/question_dialog.hpp"
+#include "education/result_queue.hpp"
 
 #include "achievements/achievements_manager.hpp"
 #include "config/player_manager.hpp"
@@ -78,6 +79,8 @@ LinearWorld::LinearWorld() : WorldWithRank()
     // Carrera Educativa is prepared in reset(), once the race configuration
     // and local players are fully available.
     m_education_enabled = false;
+    m_education_server_available = false;
+    m_education_result_queued = false;
     m_education_forced_rescue_node = -1;
     m_education_rescue_refresh_pending = false;
     m_valid_reference_time = false;
@@ -132,6 +135,8 @@ void LinearWorld::reset(bool restart)
     // single-player linear race. Doing this in reset() is important:
     // the race mode and local player count are already final here.
     m_education_enabled = false;
+    m_education_server_available = false;
+    m_education_result_queued = false;
     m_education_forced_rescue_node = -1;
     m_education_rescue_refresh_pending = false;
     m_education_questions.clear();
@@ -155,12 +160,40 @@ void LinearWorld::reset(bool restart)
         const bool server_available =
             Education::syncQuestionsToOfflineCache(
                 sync_url, &synced_count, &sync_error);
+        m_education_server_available = server_available;
 
         if (server_available)
         {
             Log::info("Education",
                       "Offline cache synchronized with %u MySQL questions.",
                       (unsigned int)synced_count);
+
+            const std::string result_sync_url =
+                "http://127.0.0.1/igh-api/public/api/result_sync_stk.php";
+            std::size_t synced_results = 0;
+            std::size_t remaining_results = 0;
+            std::string result_sync_error;
+
+            if (Education::syncPendingRaceResults(
+                    result_sync_url,
+                    &synced_results,
+                    &remaining_results,
+                    &result_sync_error))
+            {
+                if (synced_results > 0 || remaining_results > 0)
+                {
+                    Log::info("Education",
+                              "Result sync: %u uploaded, %u pending.",
+                              (unsigned int)synced_results,
+                              (unsigned int)remaining_results);
+                }
+            }
+            else
+            {
+                Log::warn("Education",
+                          "Pending result sync failed: %s",
+                          result_sync_error.c_str());
+            }
         }
         else
         {
@@ -474,6 +507,75 @@ bool LinearWorld::handleEducationalBonusBox(AbstractKart* kart, ItemState* item)
         Education::QuestionManager::QUESTIONS_PER_RACE);
 
     return true;
+}
+
+//-----------------------------------------------------------------------------
+void LinearWorld::queueEducationalRaceResult(AbstractKart* kart)
+{
+    if (!kart || m_education_result_queued ||
+        !m_education_enabled ||
+        !m_education_questions.isRaceQuestionSetComplete())
+    {
+        return;
+    }
+
+    // Temporary development identity. The Flutter/login integration will
+    // replace this with the authenticated employee code.
+    const std::string employee_code = "LOCAL-DEMO";
+
+    const float finish_time = std::max(0.0f, kart->getFinishTime());
+    const std::uint64_t race_time_ms =
+        static_cast<std::uint64_t>(finish_time * 1000.0f);
+
+    std::string result_id;
+    std::string queue_error;
+
+    if (!Education::queueOfflineRaceResult(
+            m_education_questions,
+            kart->getPosition(),
+            race_time_ms,
+            employee_code,
+            &result_id,
+            &queue_error))
+    {
+        Log::warn("Education",
+                  "Could not queue educational race result: %s",
+                  queue_error.c_str());
+        return;
+    }
+
+    m_education_result_queued = true;
+
+    Log::info("Education",
+              "Educational race result queued locally as %s.",
+              result_id.c_str());
+
+    if (!m_education_server_available)
+        return;
+
+    const std::string result_sync_url =
+        "http://127.0.0.1/igh-api/public/api/result_sync_stk.php";
+
+    std::size_t synced_results = 0;
+    std::size_t remaining_results = 0;
+    std::string sync_error;
+
+    if (!Education::syncPendingRaceResults(
+            result_sync_url,
+            &synced_results,
+            &remaining_results,
+            &sync_error))
+    {
+        Log::warn("Education",
+                  "Race result remains queued for later sync: %s",
+                  sync_error.c_str());
+        return;
+    }
+
+    Log::info("Education",
+              "Result sync after race: %u uploaded, %u pending.",
+              (unsigned int)synced_results,
+              (unsigned int)remaining_results);
 }
 
 //-----------------------------------------------------------------------------
@@ -910,6 +1012,13 @@ void LinearWorld::newLap(unsigned int kart_index)
                 m_finish_timeout = finish_time * 0.25f + 15.0f;
             }
             kart->finishedRace(finish_time);
+        }
+
+        if (m_education_enabled &&
+            kart->getController()->isLocalPlayerController() &&
+            kart->hasFinishedRace())
+        {
+            queueEducationalRaceResult(kart);
         }
     }
     int ticks_per_lap;
