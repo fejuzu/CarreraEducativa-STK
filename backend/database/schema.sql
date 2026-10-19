@@ -83,6 +83,7 @@ CREATE TABLE question_options (
 
 CREATE TABLE attempts (
     id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    client_sync_id VARCHAR(64) NULL,
     user_id BIGINT UNSIGNED NOT NULL,
     topic_id BIGINT UNSIGNED NOT NULL,
     status ENUM('in_progress','completed','abandoned') NOT NULL DEFAULT 'in_progress',
@@ -101,7 +102,8 @@ CREATE TABLE attempts (
         FOREIGN KEY (topic_id) REFERENCES topics(id),
     INDEX idx_attempts_user_date (user_id, started_at),
     INDEX idx_attempts_topic_date (topic_id, started_at),
-    INDEX idx_attempts_status (status)
+    INDEX idx_attempts_status (status),
+    UNIQUE KEY uq_attempt_client_sync (client_sync_id)
 ) ENGINE=InnoDB;
 
 CREATE TABLE attempt_questions (
