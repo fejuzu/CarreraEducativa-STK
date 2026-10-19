@@ -11,6 +11,8 @@
 #include <sqlite3.h>
 #endif
 
+#include <cstdlib>
+#include <fstream>
 #include <sstream>
 
 namespace Education
@@ -18,12 +20,305 @@ namespace Education
 
 std::string getOfflineQuestionCachePath()
 {
+#ifdef ENABLE_SQLITE3
     return file_manager->getUserConfigFile("igh_educativo_cache.sqlite");
+#else
+    return file_manager->getUserConfigFile("igh_educativo_cache.txt");
+#endif
 }
 
-#ifdef ENABLE_SQLITE3
 namespace
 {
+
+std::string cacheEscape(const std::string& value)
+{
+    std::string out;
+    out.reserve(value.size());
+
+    for (std::size_t i = 0; i < value.size(); i++)
+    {
+        switch (value[i])
+        {
+            case '\\': out += "\\\\"; break;
+            case '|': out += "\\|"; break;
+            case '\n': out += "\\n"; break;
+            case '\r': out += "\\r"; break;
+            default: out += value[i]; break;
+        }
+    }
+
+    return out;
+}
+
+std::vector<std::string> cacheSplit(const std::string& line)
+{
+    std::vector<std::string> fields;
+    std::string current;
+    bool escaped = false;
+
+    for (std::size_t i = 0; i < line.size(); i++)
+    {
+        const char c = line[i];
+
+        if (escaped)
+        {
+            switch (c)
+            {
+                case 'n': current += '\n'; break;
+                case 'r': current += '\r'; break;
+                case '|': current += '|'; break;
+                case '\\': current += '\\'; break;
+                default:
+                    current += '\\';
+                    current += c;
+                    break;
+            }
+            escaped = false;
+            continue;
+        }
+
+        if (c == '\\')
+        {
+            escaped = true;
+            continue;
+        }
+
+        if (c == '|')
+        {
+            fields.push_back(current);
+            current.clear();
+            continue;
+        }
+
+        current += c;
+    }
+
+    if (escaped)
+        current += '\\';
+
+    fields.push_back(current);
+    return fields;
+}
+
+#ifndef ENABLE_SQLITE3
+
+bool saveTextQuestionCache(const std::vector<Question>& questions,
+                           std::string* error)
+{
+    std::ofstream out(
+        getOfflineQuestionCachePath().c_str(),
+        std::ios::binary | std::ios::trunc);
+
+    if (!out)
+    {
+        if (error)
+            *error = "Cannot create portable offline question cache.";
+        return false;
+    }
+
+    out << "IGH_EDU_CACHE|1\n";
+
+    for (std::size_t q = 0; q < questions.size(); q++)
+    {
+        const Question& question = questions[q];
+
+        if (question.id <= 0 ||
+            question.options.size() < 2 ||
+            question.option_ids.size() != question.options.size() ||
+            !question.has_offline_answer_key ||
+            question.correct_index >= question.option_ids.size())
+        {
+            if (error)
+                *error = "Server returned a question that is not offline-ready.";
+            return false;
+        }
+
+        const int correct_option_id =
+            question.option_ids[question.correct_index];
+        const std::string type =
+            question.type == QuestionType::TRUE_FALSE
+                ? "true_false"
+                : "multiple_choice";
+
+        out << "Q|"
+            << question.id << "|"
+            << question.level << "|"
+            << cacheEscape(type) << "|"
+            << cacheEscape(question.topic) << "|"
+            << cacheEscape(question.subtopic) << "|"
+            << correct_option_id << "|"
+            << cacheEscape(question.prompt) << "|"
+            << cacheEscape(question.explanation) << "\n";
+
+        for (std::size_t i = 0; i < question.options.size(); i++)
+        {
+            out << "O|"
+                << question.option_ids[i] << "|"
+                << i << "|"
+                << cacheEscape(question.options[i]) << "\n";
+        }
+
+        out << "E\n";
+    }
+
+    if (!out.good())
+    {
+        if (error)
+            *error = "Could not finish writing portable offline cache.";
+        return false;
+    }
+
+    return true;
+}
+
+bool loadTextQuestionCache(std::vector<Question>* questions,
+                           std::string* error)
+{
+    std::ifstream in(
+        getOfflineQuestionCachePath().c_str(),
+        std::ios::binary);
+
+    if (!in)
+    {
+        if (error)
+            *error = "Portable offline question cache is not available.";
+        return false;
+    }
+
+    std::string line;
+    if (!std::getline(in, line))
+    {
+        if (error)
+            *error = "Portable offline cache is empty.";
+        return false;
+    }
+
+    if (!line.empty() && line.back() == '\r')
+        line.pop_back();
+
+    const std::vector<std::string> header = cacheSplit(line);
+    if (header.size() != 2 ||
+        header[0] != "IGH_EDU_CACHE" ||
+        header[1] != "1")
+    {
+        if (error)
+            *error = "Portable offline cache has an invalid header.";
+        return false;
+    }
+
+    Question current;
+    bool in_question = false;
+    int correct_option_id = 0;
+
+    while (std::getline(in, line))
+    {
+        if (!line.empty() && line.back() == '\r')
+            line.pop_back();
+
+        if (line.empty())
+            continue;
+
+        const std::vector<std::string> fields = cacheSplit(line);
+        if (fields.empty())
+            continue;
+
+        if (fields[0] == "Q")
+        {
+            if (in_question || fields.size() != 9)
+            {
+                if (error)
+                    *error = "Portable offline cache has an invalid question.";
+                questions->clear();
+                return false;
+            }
+
+            current = Question();
+            current.id = std::atoi(fields[1].c_str());
+            current.level = std::atoi(fields[2].c_str());
+            current.type = fields[3] == "true_false"
+                ? QuestionType::TRUE_FALSE
+                : QuestionType::MULTIPLE_CHOICE;
+            current.topic = fields[4];
+            current.subtopic = fields[5];
+            correct_option_id = std::atoi(fields[6].c_str());
+            current.prompt = fields[7];
+            current.explanation = fields[8];
+            current.options.clear();
+            current.option_ids.clear();
+            current.server_validated = true;
+            current.has_offline_answer_key = true;
+
+            in_question = true;
+            continue;
+        }
+
+        if (fields[0] == "O")
+        {
+            if (!in_question || fields.size() != 4)
+            {
+                if (error)
+                    *error = "Portable offline cache has an invalid option.";
+                questions->clear();
+                return false;
+            }
+
+            const int option_id = std::atoi(fields[1].c_str());
+
+            if (option_id == correct_option_id)
+                current.correct_index = current.options.size();
+
+            current.option_ids.push_back(option_id);
+            current.options.push_back(fields[3]);
+            continue;
+        }
+
+        if (fields[0] == "E")
+        {
+            const bool correct_found =
+                current.correct_index < current.option_ids.size() &&
+                current.option_ids[current.correct_index] == correct_option_id;
+
+            if (!in_question ||
+                current.id <= 0 ||
+                current.prompt.empty() ||
+                current.options.size() < 2 ||
+                current.option_ids.size() != current.options.size() ||
+                !correct_found)
+            {
+                if (error)
+                    *error = "Portable offline cache contains incomplete data.";
+                questions->clear();
+                return false;
+            }
+
+            questions->push_back(current);
+            in_question = false;
+            correct_option_id = 0;
+        }
+    }
+
+    if (in_question)
+    {
+        if (error)
+            *error = "Portable offline cache ended before closing a question.";
+        questions->clear();
+        return false;
+    }
+
+    if (questions->size() < QuestionManager::QUESTIONS_PER_RACE)
+    {
+        if (error)
+            *error = "Portable offline cache contains fewer than 10 questions.";
+        questions->clear();
+        return false;
+    }
+
+    return true;
+}
+
+#endif
+
+#ifdef ENABLE_SQLITE3
 
 bool setSqliteError(sqlite3* db, const std::string& prefix, std::string* error)
 {
@@ -67,16 +362,22 @@ bool bindText(sqlite3_stmt* stmt, int index, const std::string& value)
         stmt, index, value.c_str(), -1, SQLITE_TRANSIENT) == SQLITE_OK;
 }
 
-} // anonymous namespace
 #endif
+
+} // anonymous namespace
 
 bool saveOfflineQuestionCache(const std::vector<Question>& questions,
                               std::string* error)
 {
 #ifndef ENABLE_SQLITE3
-    if (error)
-        *error = "SQLite support is not enabled in this build.";
-    return false;
+    if (questions.empty())
+    {
+        if (error)
+            *error = "Cannot save an empty offline question bank.";
+        return false;
+    }
+
+    return saveTextQuestionCache(questions, error);
 #else
     if (questions.empty())
     {
@@ -275,11 +576,6 @@ bool saveOfflineQuestionCache(const std::vector<Question>& questions,
 bool loadOfflineQuestionCache(std::vector<Question>* questions,
                               std::string* error)
 {
-#ifndef ENABLE_SQLITE3
-    if (error)
-        *error = "SQLite support is not enabled in this build.";
-    return false;
-#else
     if (!questions)
     {
         if (error)
@@ -289,6 +585,9 @@ bool loadOfflineQuestionCache(std::vector<Question>* questions,
 
     questions->clear();
 
+#ifndef ENABLE_SQLITE3
+    return loadTextQuestionCache(questions, error);
+#else
     sqlite3* db = NULL;
     const std::string path = getOfflineQuestionCachePath();
 
