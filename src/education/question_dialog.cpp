@@ -168,30 +168,57 @@ void QuestionDialog::answer(std::size_t option_index)
         const std::string answer_url =
             "http://127.0.0.1/igh-api/public/api/answer_stk.php";
 
-        if (!validateAnswerWithApi(
+        if (validateAnswerWithApi(
                 answer_url,
                 m_question,
                 option_index,
                 &validation,
                 &validation_error))
         {
+            result = m_manager->submitValidatedAnswer(
+                option_index,
+                validation.correct,
+                validation.correct_index,
+                elapsed_ms);
+            explanation = validation.explanation;
+        }
+        else if (m_question.has_offline_answer_key &&
+                 m_question.correct_index < m_question.options.size())
+        {
+            // The current race was loaded from the synchronized SQLite cache.
+            // If PHP/MySQL is unreachable, validate with the cached answer key
+            // so the player can finish the race without connectivity.
+            const bool local_correct =
+                option_index == m_question.correct_index;
+
+            result = m_manager->submitValidatedAnswer(
+                option_index,
+                local_correct,
+                m_question.correct_index,
+                elapsed_ms);
+
+            explanation = m_question.explanation;
+            if (local_correct)
+                explanation = "Modo sin conexión: respuesta validada localmente.";
+            else if (explanation.empty())
+                explanation = "Modo sin conexión: respuesta validada localmente.";
+            else
+                explanation +=
+                    "\nModo sin conexión: respuesta validada localmente.";
+        }
+        else
+        {
             LabelWidget* feedback_widget =
                 getWidget<LabelWidget>("feedback");
             feedback_widget->setText(
                 StringUtils::utf8ToWide(
-                    "No se pudo validar la respuesta con el servidor. "
-                    "Intenta nuevamente.\n" + validation_error),
+                    "No se pudo validar la respuesta. "
+                    "Conéctate al servidor para sincronizar las preguntas.\n" +
+                    validation_error),
                 false);
             feedback_widget->setVisible(true);
             return;
         }
-
-        result = m_manager->submitValidatedAnswer(
-            option_index,
-            validation.correct,
-            validation.correct_index,
-            elapsed_ms);
-        explanation = validation.explanation;
     }
     else
     {
