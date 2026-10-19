@@ -152,9 +152,11 @@ void LinearWorld::reset(bool restart)
 
         std::size_t synced_count = 0;
         std::string sync_error;
+        const bool server_available =
+            Education::syncQuestionsToOfflineCache(
+                sync_url, &synced_count, &sync_error);
 
-        if (Education::syncQuestionsToOfflineCache(
-                sync_url, &synced_count, &sync_error))
+        if (server_available)
         {
             Log::info("Education",
                       "Offline cache synchronized with %u MySQL questions.",
@@ -173,6 +175,17 @@ void LinearWorld::reset(bool restart)
         if (Education::loadOfflineQuestionCache(
                 &cached_questions, &cache_error))
         {
+            if (!server_available)
+            {
+                // Do not retry the unavailable server for every answer during
+                // this race. The synchronized answer key is already cached.
+                for (std::size_t i = 0; i < cached_questions.size(); i++)
+                    cached_questions[i].server_validated = false;
+
+                Log::info("Education",
+                          "Starting race in offline mode from SQLite cache.");
+            }
+
             m_education_questions.setQuestionBank(cached_questions);
             Log::info("Education",
                       "Loaded %u questions from local SQLite cache.",
