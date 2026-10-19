@@ -8,23 +8,42 @@
 
 #include "education/question_manager.hpp"
 
+#include <cstddef>
 #include <string>
 #include <vector>
 
 namespace Education
 {
+    struct AnswerValidation
+    {
+        bool correct;
+        std::size_t correct_index;
+        std::string explanation;
+
+        AnswerValidation()
+            : correct(false),
+              correct_index(0)
+        {
+        }
+    };
+
     /**
-     * Downloads a question bank from the IGH EDUCATIVO PHP API.
-     *
-     * The endpoint uses a compact escaped text format so the game does not
-     * need an additional JSON dependency. This first integration keeps the
-     * existing QuestionManager contract, including correct_index, so we can
-     * prove that races are reading the MySQL bank. Server-side answer
-     * validation remains available through answer.php and can be wired next.
+     * Downloads questions from the IGH EDUCATIVO PHP/MySQL API.
+     * Correct answers are intentionally not included in this feed.
      */
     bool loadQuestionsFromApi(const std::string& url,
                               std::vector<Question>* questions,
                               std::string* error);
+
+    /**
+     * Sends the selected database option id to PHP/MySQL and returns the
+     * server-validated answer.
+     */
+    bool validateAnswerWithApi(const std::string& url,
+                               const Question& question,
+                               std::size_t selected_index,
+                               AnswerValidation* validation,
+                               std::string* error);
 }
 
 #endif
