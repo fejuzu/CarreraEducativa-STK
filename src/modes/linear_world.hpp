@@ -76,6 +76,8 @@ private:
     /** Educational mode: questions are triggered by dedicated gift gates. */
     Education::QuestionManager m_education_questions;
     bool                       m_education_enabled;
+    bool                       m_education_server_available;
+    bool                       m_education_result_queued;
 
     /** Item ids for each educational gift gate. Each gate contains several
      *  bonus boxes across the track so the player can collect one easily. */
@@ -98,6 +100,9 @@ private:
 
     /** Checks whether the current mandatory gift gate was skipped. */
     void updateEducationalQuestions();
+
+    /** Saves the completed educational race locally and syncs it when possible. */
+    void queueEducationalRaceResult(AbstractKart* kart);
 
     /** Returns the gate index containing item_id, or -1. */
     int findEducationalGiftGate(unsigned int item_id) const;
