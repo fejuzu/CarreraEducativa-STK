@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 require dirname(__DIR__, 2) . '/src/bootstrap.php';
 
-function stkResultError(string $message, int $status = 400): never
+function stkResultError(string $message, int $status = 400): void
 {
     http_response_code($status);
     header('Content-Type: text/plain; charset=utf-8');
