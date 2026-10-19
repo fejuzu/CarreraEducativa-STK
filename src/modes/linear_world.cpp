@@ -18,6 +18,7 @@
 #include "modes/linear_world.hpp"
 
 #include "education/demo_questions.hpp"
+#include "education/question_api.hpp"
 #include "education/question_dialog.hpp"
 
 #include "achievements/achievements_manager.hpp"
@@ -140,8 +141,32 @@ void LinearWorld::reset(bool restart)
          RaceManager::get()->getMinorMode() ==
              RaceManager::MINOR_MODE_TIME_TRIAL))
     {
-        m_education_questions.setQuestionBank(
-            Education::createDemoQuestionBank());
+        std::vector<Education::Question> api_questions;
+        std::string api_error;
+        const std::string api_url =
+            "http://127.0.0.1/igh-api/public/api/questions_stk.php?limit=10";
+
+        if (Education::loadQuestionsFromApi(
+                api_url, &api_questions, &api_error))
+        {
+            m_education_questions.setQuestionBank(api_questions);
+            Log::info("Education",
+                      "Loaded %u questions from MySQL API.",
+                      (unsigned int)api_questions.size());
+        }
+        else
+        {
+            // Keep the existing demo bank as a safety net while the local API
+            // integration is being tested. This prevents a temporary XAMPP
+            // outage from disabling educational races completely.
+            Log::warn("Education",
+                      "Could not load MySQL questions: %s. "
+                      "Using built-in demo bank.",
+                      api_error.c_str());
+            m_education_questions.setQuestionBank(
+                Education::createDemoQuestionBank());
+        }
+
         m_education_enabled = m_education_questions.startRace();
 
         // Gift gates are static track items. Create them only once for this
